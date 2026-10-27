@@ -2,14 +2,68 @@
   "name": "droidbridge",
   "version": "1.0.0",
   "description": "Dual-Pane Ubuntu <-> Android GUI File Manager (Web App & Ubuntu Desktop App in 1)",
+  "author": "DroidBridge <droidbridge@local>",
+  "homepage": "https://github.com/droidbridge/droidbridge",
   "main": "electron/main.cjs",
   "scripts": {
     "dev:server": "tsx server/index.ts",
     "dev:client": "vite --port 5173",
-    "build": "vite build",
+    "build:client": "vite build",
+    "build:server": "esbuild server/index.ts --bundle --platform=node --format=cjs --outfile=dist-server/index.cjs",
+    "build": "npm run build:client && npm run build:server",
     "start": "NODE_ENV=production tsx server/index.ts",
     "desktop": "npm run build && electron .",
-    "desktop:dev": "electron ."
+    "desktop:dev": "electron .",
+    "dist": "npm run build && electron-builder --linux deb AppImage"
+  },
+  "build": {
+    "appId": "com.droidbridge.app",
+    "productName": "DroidBridge",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-server/**/*",
+      "electron/**/*",
+      "public/icon.png",
+      "public/favicon.png",
+      "public/logo.svg",
+      "package.json"
+    ],
+    "linux": {
+      "icon": "public/icon.png",
+      "category": "Utility;FileTools;FileManager;",
+      "synopsis": "Dual-Pane Ubuntu <-> Android File Manager & ADB Workstation",
+      "executableName": "droidbridge",
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "desktop": {
+        "entry": {
+          "Name": "DroidBridge",
+          "Comment": "Dual-Pane Ubuntu <-> Android File Manager & ADB Workstation",
+          "Keywords": "Android;ADB;Ubuntu;FileManager;Transfer;TrimUI;",
+          "StartupWMClass": "droidbridge"
+        }
+      }
+    },
+    "deb": {
+      "recommends": [
+        "adb"
+      ]
+    }
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -28,6 +82,7 @@
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^34.2.0",
+    "electron-builder": "^26.18.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vite": "^6.1.0"

@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
@@ -12,6 +13,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 let mainWindow = null;
 let backendProcess = null;
+let inProcessServer = null;
 
 /**
  * Checks if the local Express backend is responding at /api/health
@@ -50,6 +52,14 @@ async function ensureBackendServer() {
   const alreadyRunning = await checkBackendHealth();
   if (alreadyRunning) {
     console.log(`[DroidBridge Desktop] Attached to existing backend server at ${HEALTH_URL}`);
+    return;
+  }
+
+  const bundledServerPath = path.join(PROJECT_ROOT, 'dist-server/index.cjs');
+  if (fs.existsSync(bundledServerPath)) {
+    console.log('[DroidBridge Desktop] Starting bundled in-process backend server...');
+    const { startServer } = require(bundledServerPath);
+    inProcessServer = await startServer(PORT);
     return;
   }
 
@@ -167,6 +177,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  if (inProcessServer) {
+    console.log('[DroidBridge Desktop] Closing in-process backend server...');
+    inProcessServer.close();
+    inProcessServer = null;
+  }
   if (backendProcess && !backendProcess.killed) {
     console.log('[DroidBridge Desktop] Stopping spawned backend server...');
     backendProcess.kill('SIGTERM');

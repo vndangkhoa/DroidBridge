@@ -468,8 +468,11 @@ app.get('/api/transfer/jobs', (_req: Request, res: Response) => {
 });
 
 // Serve built frontend static assets if dist/index.html exists
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const distDir = path.resolve(__dirname, '../dist');
+const currentDir =
+  typeof __dirname !== 'undefined'
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
+const distDir = path.resolve(currentDir, '../dist');
 const distIndexHtml = path.join(distDir, 'index.html');
 
 if (fs.existsSync(distIndexHtml)) {
@@ -504,8 +507,11 @@ export function startServer(port?: number): Promise<Server> {
 }
 
 const isMainModule =
-  Boolean(process.argv[1]) &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+  typeof require !== 'undefined' && typeof module !== 'undefined'
+    ? require.main === module
+    : Boolean(process.argv[1]) && import.meta?.url
+      ? import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
+      : false;
 
 if (isMainModule) {
   startServer().catch((err) => {
