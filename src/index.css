@@ -1084,19 +1084,28 @@ dialog::backdrop {
 }
 
 /* External OS & Cross-Pane Drag-Over Banner */
+.file-pane {
+  position: relative;
+}
+
 .pane-drop-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 7px 12px;
-  background-color: var(--accent-bridge-soft);
-  border-bottom: 1px dashed var(--accent-bridge);
-  color: #e0f2fe;
+  padding: 8px 12px;
+  background-color: rgba(14, 165, 233, 0.92);
+  border-bottom: 1px solid var(--accent-bridge);
+  color: #ffffff;
   font-size: 12px;
   font-weight: 600;
   pointer-events: none;
-  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 /* Wi-Fi P2P Share & Peer Discovery Modal */

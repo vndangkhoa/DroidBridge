@@ -99,6 +99,8 @@ app.use(express.json({ limit: '25mb' }));
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
+    version: '1.1.0',
+    p2p: true,
     platform: process.platform,
     hostname: os.hostname(),
   });

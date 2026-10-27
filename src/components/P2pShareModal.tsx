@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Check,
   Copy,
@@ -74,9 +74,18 @@ export const P2pShareModal: React.FC<P2pShareModalProps> = ({
 
   const [peers, setPeers] = useState<P2pDiscoveredPeer[]>([]);
   const [peersLoading, setPeersLoading] = useState(false);
+  const [peerScanError, setPeerScanError] = useState<string | null>(null);
   const [connectingPeerKey, setConnectingPeerKey] = useState<string | null>(
     null
   );
+
+  const onNotifyRef = useRef(onNotify);
+  useEffect(() => {
+    onNotifyRef.current = onNotify;
+  }, [onNotify]);
+
+  const wasOpenRef = useRef(false);
+  const hasAutoScannedPeersRef = useRef(false);
 
   const loadSharesAndStatus = useCallback(async () => {
     setSharesLoading(true);
@@ -100,8 +109,9 @@ export const P2pShareModal: React.FC<P2pShareModalProps> = ({
     }
   }, []);
 
-  const scanPeers = useCallback(async () => {
+  const scanPeers = useCallback(async (showToastOnError = false) => {
     setPeersLoading(true);
+    setPeerScanError(null);
     try {
       const [discovered, status] = await Promise.all([
         api.discoverP2pPeers(),
@@ -110,28 +120,38 @@ export const P2pShareModal: React.FC<P2pShareModalProps> = ({
       setPeers(discovered);
       setNetStatus(status);
     } catch (err: any) {
-      onNotify('error', err?.message || 'Failed to scan nearby Wi-Fi peers');
+      const msg = err?.message || 'Failed to scan nearby Wi-Fi peers';
+      setPeerScanError(msg);
+      if (showToastOnError) {
+        onNotifyRef.current('error', msg);
+      }
     } finally {
       setPeersLoading(false);
     }
-  }, [onNotify]);
+  }, []);
 
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpenRef.current) {
+      wasOpenRef.current = true;
+      hasAutoScannedPeersRef.current = false;
       setSourceKind(initialSourceKind);
       setCustomPaths(initialPaths);
       setShareTitle('');
       setPin('');
       setAllowUpload(true);
+      setPeerScanError(null);
       loadSharesAndStatus();
+    } else if (!open && wasOpenRef.current) {
+      wasOpenRef.current = false;
     }
   }, [open, initialSourceKind, initialPaths, loadSharesAndStatus]);
 
   useEffect(() => {
-    if (open && activeTab === 'peers' && peers.length === 0 && !peersLoading) {
-      scanPeers();
+    if (open && activeTab === 'peers' && !hasAutoScannedPeersRef.current) {
+      hasAutoScannedPeersRef.current = true;
+      scanPeers(false);
     }
-  }, [open, activeTab, peers.length, peersLoading, scanPeers]);
+  }, [open, activeTab, scanPeers]);
 
   // Periodically refresh active share stats while modal is open
   useEffect(() => {
@@ -745,13 +765,27 @@ export const P2pShareModal: React.FC<P2pShareModalProps> = ({
               <button
                 type="button"
                 className="btn btn-xs btn-bridge"
-                onClick={scanPeers}
+                onClick={() => scanPeers(true)}
                 disabled={peersLoading}
               >
                 <RefreshCw size={11} className={peersLoading ? 'spin' : ''} />
                 <span>Scan Nearby Peers</span>
               </button>
             </div>
+
+            {peerScanError && (
+              <div
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  backgroundColor: 'var(--accent-danger-soft)',
+                  color: '#fecdd3',
+                  fontSize: 12,
+                }}
+              >
+                {peerScanError}
+              </div>
+            )}
 
             {peersLoading && peers.length === 0 ? (
               <div className="p2p-empty-box">

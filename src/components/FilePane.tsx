@@ -379,7 +379,16 @@ export const FilePane: React.FC<FilePaneProps> = ({
         }
       }}
       onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const isOutside =
+          e.clientX <= rect.left ||
+          e.clientX >= rect.right ||
+          e.clientY <= rect.top ||
+          e.clientY >= rect.bottom;
+        if (
+          isOutside ||
+          (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget as Node))
+        ) {
           setDragMode('none');
         }
       }}

@@ -9,8 +9,7 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('no-sandbox');
 }
 
-const PORT = Number(process.env.PORT || 3456);
-const HEALTH_URL = `http://127.0.0.1:${PORT}/api/health`;
+let activePort = Number(process.env.PORT || 3456);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 let mainWindow = null;
@@ -18,18 +17,35 @@ let backendProcess = null;
 let inProcessServer = null;
 
 /**
- * Checks if the local Express backend is responding at /api/health
+ * Checks if the local Express backend is responding at /api/health with P2P support
  */
-function checkBackendHealth() {
+function checkBackendHealth(port = activePort) {
   return new Promise((resolve) => {
-    const req = http.get(HEALTH_URL, { timeout: 1000 }, (res) => {
-      res.resume();
-      resolve(res.statusCode >= 200 && res.statusCode < 500);
+    const req = http.get(`http://127.0.0.1:${port}/api/health`, { timeout: 1000 }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => {
+        body += chunk;
+      });
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 500) {
+          resolve({ running: false, compatible: false });
+          return;
+        }
+        try {
+          const data = JSON.parse(body);
+          resolve({
+            running: true,
+            compatible: Boolean(data && data.status === 'ok' && data.p2p === true),
+          });
+        } catch {
+          resolve({ running: true, compatible: false });
+        }
+      });
     });
-    req.on('error', () => resolve(false));
+    req.on('error', () => resolve({ running: false, compatible: false }));
     req.on('timeout', () => {
       req.destroy();
-      resolve(false);
+      resolve({ running: false, compatible: false });
     });
   });
 }
@@ -40,37 +56,43 @@ function checkBackendHealth() {
 async function waitForBackend(maxWaitMs = 10000) {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
-    const ok = await checkBackendHealth();
-    if (ok) return true;
+    const status = await checkBackendHealth(activePort);
+    if (status.running && status.compatible) return true;
     await new Promise((r) => setTimeout(r, 250));
   }
   return false;
 }
 
 /**
- * Ensures the DroidBridge backend server is running on 127.0.0.1:3456
+ * Ensures the DroidBridge backend server is running with current P2P endpoints
  */
 async function ensureBackendServer() {
-  const alreadyRunning = await checkBackendHealth();
-  if (alreadyRunning) {
-    console.log(`[DroidBridge Desktop] Attached to existing backend server at ${HEALTH_URL}`);
+  const initialStatus = await checkBackendHealth(activePort);
+  if (initialStatus.running && initialStatus.compatible) {
+    console.log(`[DroidBridge Desktop] Attached to compatible backend server at http://127.0.0.1:${activePort}`);
     return;
+  }
+
+  if (initialStatus.running && !initialStatus.compatible) {
+    // An older backend without P2P routes is occupying default port 3456; switch to 3457
+    activePort = activePort + 1;
+    console.log(`[DroidBridge Desktop] Port 3456 has an older server instance; using port ${activePort}`);
   }
 
   const bundledServerPath = path.join(PROJECT_ROOT, 'dist-server/index.cjs');
   if (fs.existsSync(bundledServerPath)) {
-    console.log('[DroidBridge Desktop] Starting bundled in-process backend server...');
+    console.log(`[DroidBridge Desktop] Starting bundled in-process backend server on port ${activePort}...`);
     const { startServer } = require(bundledServerPath);
-    inProcessServer = await startServer(PORT);
+    inProcessServer = await startServer(activePort);
     return;
   }
 
-  console.log('[DroidBridge Desktop] Spawning local backend server (npx tsx server/index.ts)...');
+  console.log(`[DroidBridge Desktop] Spawning local backend server (npx tsx server/index.ts) on port ${activePort}...`);
   backendProcess = spawn('npx', ['tsx', 'server/index.ts'], {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
-      PORT: String(PORT),
+      PORT: String(activePort),
       NODE_ENV: process.env.NODE_ENV || 'production',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -160,7 +182,7 @@ async function createMainWindow() {
     },
   });
 
-  const targetUrl = process.env.VITE_DEV_SERVER_URL || `http://127.0.0.1:${PORT}`;
+  const targetUrl = process.env.VITE_DEV_SERVER_URL || `http://127.0.0.1:${activePort}`;
   await mainWindow.loadURL(targetUrl);
 
   mainWindow.on('closed', () => {
