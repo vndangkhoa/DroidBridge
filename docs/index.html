@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DroidBridge — Ubuntu ↔ Android Drag-and-Drop &amp; P2P File Workstation</title>
+  <meta name="description" content="Minimalist dual-pane Ubuntu and Android file workstation with recursive folder drag-and-drop, P2P QR/Hotspot sharing, and high-speed USB/Wi-Fi ADB &amp; SSH." />
+  <meta property="og:title" content="DroidBridge — Ubuntu ↔ Android Drag-and-Drop &amp; P2P Workstation" />
+  <meta property="og:description" content="Drag and drop files and folders between Ubuntu and Android, share directories P2P over Wi-Fi/Hotspot via QR code, and manage handheld MicroSD cards." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="theme-color" content="#0d1014" />
+  <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- Minimalist Top Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="#" class="brand-link">
+        <img src="./logo.svg" alt="DroidBridge emblem" width="28" height="28" class="brand-logo" />
+        <span class="brand-name">DroidBridge</span>
+      </a>
+
+      <nav class="nav-links" aria-label="Primary navigation">
+        <a href="#workbench" class="nav-link">Workbench</a>
+        <a href="#capabilities" class="nav-link">Capabilities</a>
+        <a href="#comparison" class="nav-link">Comparison</a>
+        <a href="https://git.khoavo.myds.me/vndangkhoa/DroidBridge" class="nav-link" target="_blank" rel="noopener">Forgejo</a>
+        <a href="https://gitlab.khoavo.myds.me/vndangkhoa/DroidBridge" class="nav-link" target="_blank" rel="noopener">GitLab</a>
+      </nav>
+
+      <div class="header-actions">
+        <a href="https://github.com/vndangkhoa/DroidBridge/releases/latest" class="btn btn-sm btn-ubuntu" target="_blank" rel="noopener">
+          Download v1.0
+        </a>
+        <a href="https://github.com/vndangkhoa/DroidBridge" class="btn btn-sm btn-bridge" target="_blank" rel="noopener">
+          GitHub
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <!-- FIRST VIEWPORT: Minimalist Header + Full-Width Interactive Drag-and-Drop & P2P Workbench -->
+    <section class="hero-minimal" id="workbench" aria-labelledby="hero-heading">
+      <div class="hero-header-row">
+        <h1 class="hero-title" id="hero-heading">
+          <span class="title-ubuntu">Ubuntu</span> &harr; <span class="title-android">Android</span>. Drag, Drop &amp; <span class="title-bridge">Share P2P</span>.
+        </h1>
+        <p class="hero-subtitle">
+          Dual-pane ADB, SSH, and P2P Wi-Fi workstation. Drag folders across panes or share any directory via QR code &amp; Linux Hotspot.
+        </p>
+      </div>
+
+      <!-- Single Compact Action & CLI Bar -->
+      <div class="action-bar" aria-label="Downloads and Quick Start">
+        <div class="dl-pills">
+          <a href="https://github.com/vndangkhoa/DroidBridge/releases/latest" class="btn btn-ubuntu" target="_blank" rel="noopener">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Ubuntu (.deb / .AppImage)
+          </a>
+          <a href="https://github.com/vndangkhoa/DroidBridge/releases/latest" class="btn" target="_blank" rel="noopener">
+            Windows (.exe)
+          </a>
+          <a href="https://github.com/vndangkhoa/DroidBridge/releases/latest" class="btn" target="_blank" rel="noopener">
+            macOS (.dmg)
+          </a>
+        </div>
+
+        <div class="cli-inline">
+          <span><span class="cli-prompt">$ </span>git clone https://github.com/vndangkhoa/DroidBridge.git &amp;&amp; ./scripts/start-web.sh</span>
+          <button type="button" class="btn btn-sm btn-bridge" id="copy-cli-btn">
+            <span class="copy-label">Copy</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Full-Width Interactive Dual-Pane Workbench -->
+      <div class="workbench-frame" role="region" aria-label="Interactive DroidBridge Dual-Pane Simulator">
+        <div class="wb-top-bar">
+          <div class="wb-left-group">
+            <span class="wb-dots" aria-hidden="true">
+              <span class="wb-dot amber"></span>
+              <span class="wb-dot cyan"></span>
+              <span class="wb-dot mint"></span>
+            </span>
+
+            <div class="device-pills" role="group" aria-label="Target device profile">
+              <button type="button" class="device-pill-btn active" data-device-key="trimui">TrimUI TG5050 (USB)</button>
+              <button type="button" class="device-pill-btn" data-device-key="pixel">Pixel 9 Pro (Wi-Fi)</button>
+              <button type="button" class="device-pill-btn" data-device-key="ssh">Termux (SSH :8022)</button>
+            </div>
+          </div>
+
+          <div class="wb-actions">
+            <button type="button" class="btn btn-sm btn-bridge" data-open-dialog="dialog-p2p">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              P2P QR Share &amp; Hotspot
+            </button>
+            <button type="button" class="btn btn-sm" data-open-dialog="dialog-wifi">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+              Connect Peer
+            </button>
+          </div>
+        </div>
+
+        <div class="wb-toast-bar" role="status" aria-live="polite">
+          <span id="wb-status-text">Try it: Drag any file/folder row between panes, drop files from your desktop, or click P2P Share.</span>
+          <span class="mono">Web (:3456) + Electron 34</span>
+        </div>
+
+        <div class="wb-panes-grid">
+          <!-- Left Pane: Ubuntu Host -->
+          <div class="wb-pane" data-pane-drop="ubuntu">
+            <div class="wb-pane-header">
+              <div class="wb-pane-title-wrap">
+                <span class="wb-led ubuntu" aria-hidden="true"></span>
+                <h2 class="wb-pane-title">UBUNTU HOST</h2>
+              </div>
+              <span class="wb-path-chip">/mnt/data/roms</span>
+            </div>
+
+            <div tabindex="0" role="region" aria-labelledby="ubuntu-caption" class="table-wrapper wb-table-wrapper">
+              <table class="data-table">
+                <caption id="ubuntu-caption" class="sr-only">Ubuntu Host files and folders</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Name (Drag across panes)</th>
+                    <th scope="col">Size</th>
+                    <th scope="col">Share</th>
+                  </tr>
+                </thead>
+                <tbody id="ubuntu-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Center Bridge -->
+          <div class="wb-bridge-col" aria-label="Transfer controls">
+            <button type="button" class="wb-bridge-btn" id="wb-push-btn">
+              <span>Push &rarr;</span>
+              <span class="wb-count" id="push-count">2 selected</span>
+            </button>
+            <button type="button" class="wb-bridge-btn" id="wb-pull-btn">
+              <span>&larr; Pull</span>
+              <span class="wb-count" id="pull-count">1 selected</span>
+            </button>
+          </div>
+
+          <!-- Right Pane: Android Device -->
+          <div class="wb-pane" data-pane-drop="android">
+            <div class="wb-pane-header">
+              <div class="wb-pane-title-wrap">
+                <span class="wb-led android" aria-hidden="true"></span>
+                <h2 class="wb-pane-title" id="android-pane-title">ANDROID • TrimUI TG5050 (USB)</h2>
+              </div>
+              <span class="wb-path-chip" id="android-path-chip">/storage/3A1F-8B2E/roms</span>
+            </div>
+
+            <div tabindex="0" role="region" aria-labelledby="android-caption" class="table-wrapper wb-table-wrapper">
+              <table class="data-table">
+                <caption id="android-caption" class="sr-only">Android Device files and folders</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Name (Drop files/folders here)</th>
+                    <th scope="col">Size</th>
+                    <th scope="col">Share</th>
+                  </tr>
+                </thead>
+                <tbody id="android-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="wb-activity-bar">
+          <span class="activity-pill" id="wb-last-activity">READY • Drag &amp; drop recursive folders or click P2P Share</span>
+          <span>P2P Hotspot: DroidBridge-P2P (10.42.0.1:3456)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: Minimalist 4-Column Capability Strip (No Card Boxes, Minimal Copy) -->
+    <section class="minimal-section" id="capabilities" aria-labelledby="capabilities-heading">
+      <h2 class="section-heading" id="capabilities-heading">Built for Fast Hardware Workflows</h2>
+
+      <div class="capability-strip">
+        <div class="capability-item">
+          <h3 class="capability-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6"/><path d="m9 13 3-3 3 3"/></svg>
+            Folder Drag &amp; Drop
+          </h3>
+          <p class="capability-desc">
+            Drop files and nested folder trees between panes or straight from your OS file manager.
+          </p>
+        </div>
+
+        <div class="capability-item">
+          <h3 class="capability-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            P2P QR &amp; Hotspot Share
+          </h3>
+          <p class="capability-desc">
+            Share any Ubuntu or Android folder over LAN or built-in Linux Wi-Fi Hotspot with QR &amp; PIN lock.
+          </p>
+        </div>
+
+        <div class="capability-item">
+          <h3 class="capability-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8L22 12L18 16"/><path d="M2 12H22"/><path d="M6 16L2 12L6 8"/></svg>
+            USB, Wi-Fi ADB &amp; SSH
+          </h3>
+          <p class="capability-desc">
+            Direct <code>adb push/pull</code> and Termux SSH (<code>:8022</code>) with automatic MicroSD discovery.
+          </p>
+        </div>
+
+        <div class="capability-item">
+          <h3 class="capability-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            Web + Native Desktop
+          </h3>
+          <p class="capability-desc">
+            Run as a local web server (<code>:3456</code>) or native Electron desktop app on Linux, Windows &amp; macOS.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: Compact 5-Row Comparison Table -->
+    <section class="minimal-section" id="comparison" aria-labelledby="comparison-heading">
+      <h2 class="section-heading" id="comparison-heading">DroidBridge vs. Legacy Transfers</h2>
+
+      <div tabindex="0" role="region" aria-labelledby="comparison-heading" class="table-wrapper comparison-frame">
+        <table class="data-table stackable-table comparison-table">
+          <caption class="sr-only">Comparison of DroidBridge against Linux MTP and Raw adb CLI</caption>
+          <thead>
+            <tr>
+              <th scope="col">Capability</th>
+              <th scope="col">DroidBridge</th>
+              <th scope="col">Linux MTP (GVFS)</th>
+              <th scope="col">Raw adb CLI</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Recursive Folder Drag &amp; Drop</th>
+              <td class="cell-yes">Cross-pane &amp; OS desktop drop</td>
+              <td class="cell-no">Freezes on large folders</td>
+              <td class="cell-no">Manual CLI paths only</td>
+            </tr>
+            <tr>
+              <th scope="row">P2P File &amp; Folder Sharing</th>
+              <td class="cell-yes">QR code, PIN lock &amp; Linux Wi-Fi Hotspot</td>
+              <td class="cell-no">None</td>
+              <td class="cell-no">None</td>
+            </tr>
+            <tr>
+              <th scope="row">Transport Protocols</th>
+              <td class="cell-yes">USB ADB, Wi-Fi ADB, SSH (:8022) &amp; HTTP P2P</td>
+              <td class="cell-no">USB MTP only</td>
+              <td class="cell-yes">USB &amp; Wi-Fi ADB</td>
+            </tr>
+            <tr>
+              <th scope="row">Handheld MicroSD Auto-Mount</th>
+              <td class="cell-yes">Auto-detects /storage/XXXX-XXXX</td>
+              <td class="cell-no">Often hidden</td>
+              <td class="cell-no">Manual lookup</td>
+            </tr>
+            <tr>
+              <th scope="row">1-Click APK &amp; Live Screencap</th>
+              <td class="cell-yes">Built-in</td>
+              <td class="cell-no">None</td>
+              <td class="cell-no">Manual shell pipes</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span><strong>DroidBridge</strong> — MIT License • Built by <a href="https://github.com/vndangkhoa" target="_blank" rel="noopener">Khoa Vo (@vndangkhoa)</a></span>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <a href="https://github.com/vndangkhoa/DroidBridge" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://git.khoavo.myds.me/vndangkhoa/DroidBridge" target="_blank" rel="noopener">Forgejo</a>
+      <a href="https://gitlab.khoavo.myds.me/vndangkhoa/DroidBridge" target="_blank" rel="noopener">GitLab</a>
+      <a href="https://github.com/vndangkhoa/DroidBridge/releases" target="_blank" rel="noopener">Releases</a>
+    </div>
+  </footer>
+
+  <!-- MODAL 1: P2P File & Folder Share (<dialog closedby="any">) -->
+  <dialog id="dialog-p2p" class="wb-dialog" closedby="any" aria-labelledby="dialog-p2p-title">
+    <div class="dialog-header">
+      <h2 class="dialog-title" id="dialog-p2p-title">P2P Folder &amp; File Share (QR + Hotspot)</h2>
+      <form method="dialog">
+        <button type="submit" class="btn btn-sm">Esc</button>
+      </form>
+    </div>
+    <div class="dialog-body">
+      <div>
+        Sharing: <strong id="p2p-share-item-name" style="color:var(--text-primary)">psx_roms_pack + gba_collection (Ubuntu Host)</strong>
+      </div>
+
+      <div class="qr-card">
+        <svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="P2P Share QR Code">
+          <rect width="96" height="96" rx="6" fill="#f8fafc"/>
+          <rect x="10" y="10" width="24" height="24" rx="2" stroke="#0d1014" stroke-width="4"/>
+          <rect x="18" y="18" width="8" height="8" fill="#0d1014"/>
+          <rect x="62" y="10" width="24" height="24" rx="2" stroke="#0d1014" stroke-width="4"/>
+          <rect x="70" y="18" width="8" height="8" fill="#0d1014"/>
+          <rect x="10" y="62" width="24" height="24" rx="2" stroke="#0d1014" stroke-width="4"/>
+          <rect x="18" y="70" width="8" height="8" fill="#0d1014"/>
+          <rect x="42" y="14" width="8" height="8" fill="#0d1014"/>
+          <rect x="42" y="30" width="12" height="8" fill="#0d1014"/>
+          <rect x="14" y="42" width="16" height="8" fill="#0d1014"/>
+          <rect x="42" y="46" width="16" height="16" rx="2" fill="#0284c7"/>
+          <rect x="66" y="44" width="18" height="8" fill="#0d1014"/>
+          <rect x="44" y="68" width="10" height="16" fill="#0d1014"/>
+          <rect x="62" y="62" width="22" height="10" fill="#0d1014"/>
+          <rect x="72" y="76" width="12" height="10" fill="#0d1014"/>
+        </svg>
+
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:0;width:100%">
+          <label for="p2p-share-url" class="sr-only">Share URL</label>
+          <input id="p2p-share-url" type="text" class="dialog-input" value="http://10.42.0.1:3456/s/psx-roms-pack" readonly />
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn btn-sm btn-bridge" id="copy-p2p-url-btn">Copy Link</button>
+            <span class="mono" style="font-size:0.78rem;color:var(--accent-android-text);align-self:center">PIN: Optional • 2-Way Upload ON</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mono" style="font-size:0.78rem;color:var(--text-secondary)">
+        Linux Wi-Fi Hotspot: <strong>DroidBridge-P2P</strong> (nmcli AP active) • Any phone or handheld scanning the QR code can download folders as <code>.tar</code> or upload files directly.
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn btn-sm" onclick="document.getElementById('dialog-p2p').close()">Done</button>
+    </div>
+  </dialog>
+
+  <!-- MODAL 2: Wireless ADB & SSH Peer Discovery (<dialog closedby="any">) -->
+  <dialog id="dialog-wifi" class="wb-dialog" closedby="any" aria-labelledby="dialog-wifi-title">
+    <div class="dialog-header">
+      <h2 class="dialog-title" id="dialog-wifi-title">Connect Wi-Fi ADB or SSH Peer</h2>
+      <form method="dialog">
+        <button type="submit" class="btn btn-sm">Esc</button>
+      </form>
+    </div>
+    <div class="dialog-body">
+      <p style="margin:0">
+        Auto-discovers Android devices on your LAN/Hotspot with open ADB (<code>:5555</code>) or SSH/Termux (<code>:8022</code> / <code>:22</code>) ports:
+      </p>
+      <label for="peer-addr-input" class="sr-only">Peer Address</label>
+      <input id="peer-addr-input" type="text" class="dialog-input" value="192.168.1.42:5555" />
+      <span class="mono" style="font-size:0.78rem;color:var(--text-secondary)">Discovered on LAN: Pixel 9 Pro (192.168.1.42:5555) • TrimUI TG5050 (10.42.0.84:8022)</span>
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn btn-sm" onclick="document.getElementById('dialog-wifi').close()">Close</button>
+    </div>
+  </dialog>
+
+  <script src="./app.js"></script>
+</body>
+</html>

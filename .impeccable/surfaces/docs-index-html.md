@@ -8,14 +8,14 @@ related_targets: ["docs/styles.css","docs/app.js"]
 # Surface Brief — `docs/index.html`
 
 - **Mode:** Persuade
-- **Scope:** GitHub Pages promotional website (`docs/index.html`, `docs/styles.css`, `docs/app.js`)
-- **Audience:** Linux/Ubuntu developers, Android power users, and retro gaming handheld owners (TrimUI Smart Pro S, Odin, Retroid) tired of broken `gvfs-mtp` mounts and tedious CLI `adb` commands.
+- **Scope:** Minimalist GitHub Pages promotional website (`docs/index.html`, `docs/styles.css`, `docs/app.js`)
+- **Audience:** Linux/Ubuntu developers, Android power users, and handheld owners wanting fast ADB transfers, recursive drag-and-drop, and P2P folder sharing.
 
 ## Direction contract
 
-- **THESIS:** An interactive hardware-bridge switchboard and live dual-pane ADB workbench that proves DroidBridge's speed and dual-runtime power in the first viewport—refusing generic SaaS hero banners, decorative marketing cards, and eyebrow kickers.
-- **OWN-WORLD:** Tactile Dark Workbench (`#0d1014` canvas, `#12161c` pane surfaces, `#171c24` toolbars, `#232b36` hairline borders) pairing `#f59e0b` Warm Amber for Ubuntu Host, `#10b981` Emerald Mint for Android targets, and `#38bdf8` Cyan for the ADB Transfer Bridge, with `'Plus Jakarta Sans'` UI typography and `'JetBrains Mono'` tabular readouts.
-- **STORY:** Visitors see Ubuntu wired directly to switchable Android targets (`TrimUI Smart Pro S TG5050`, `Pixel 9 Pro USB`, `Galaxy Tab S9 Wi-Fi 5555`), test live `adb push`/`pull` and `.apk` sideloading in the interactive workbench, compare ADB against flaky MTP, and grab the `.deb`/`.AppImage` release or 30-second CLI command.
-- **FIRST VIEWPORT:** Top precision workbench bar with brand emblem and repository links; left column holds the headline, 1-click platform release downloads (`.deb`, `.AppImage`, Windows, macOS), and copyable 30-second terminal Quick Start; right column holds the interactive Hardware Bridge Switchboard and live Dual-Pane Commander where switching devices or clicking `[Push →]` / `[← Pull]` re-wires paths, telemetry counters, and the transfer queue.
-- **FORM:** Hardware Bridge Schematic & Multi-Device Switchboard (Candidate 3 of 7 on the grounded surface list; seed key `af22bc94`; raised by `fashion-folded-worlds-sewing-pattern-envelope` solid-vs-dashed active transport routing and `signals-instruments-nixie-laboratory-counter` tabular telemetry counters).
+- **THESIS:** A quiet, minimalist showcase where a full-width interactive Dual-Pane Workbench—complete with live file/folder drag-and-drop and P2P QR/Hotspot sharing—speaks for itself without walls of text or visual clutter.
+- **OWN-WORLD:** Tactile Dark Workbench (`#0d1014` canvas, `#12161c` pane surfaces, `#171c24` toolbars, `#232b36` hairline borders) with restrained `#f59e0b` Ubuntu Amber, `#10b981` Android Emerald, and `#38bdf8` Bridge Cyan accents, generous negative space, and `'Chivo'` + `'JetBrains Mono'` tabular typography.
+- **STORY:** Visitors read a single-line value proposition, grab the 1-click installer or copy the 1-line Quick Start, and immediately test dragging files/folders between Ubuntu and Android or generating a P2P QR share link right in the live workbench.
+- **FIRST VIEWPORT:** Minimalist top bar; concise headline and one-sentence subtitle; single horizontal release & CLI bar (`.deb`/`.AppImage`, `.exe`, `.dmg`, copyable command); and the full-width interactive Dual-Pane Workbench with live Drag & Drop and P2P Share trigger above the fold.
+- **FORM:** Distilled Minimalist Workbench Stage (Candidate 3 of 7 on the grounded surface list; seed key `af22bc94`; distilled via `distill.md` and `quieter.md` to eliminate multi-box clutter and verbose copy).
 - **FINISH:** unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
