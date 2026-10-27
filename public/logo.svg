@@ -1,0 +1,210 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <defs>
+    <!-- App Squircle Background -->
+    <linearGradient id="bg-base" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#171c24"/>
+      <stop offset="50%" stop-color="#11151c"/>
+      <stop offset="100%" stop-color="#0b0e13"/>
+    </linearGradient>
+
+    <!-- Border Rim Gradient (Amber -> Cyan -> Emerald) -->
+    <linearGradient id="rim-grad" x1="20" y1="20" x2="492" y2="492" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#38bdf8" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0.8"/>
+    </linearGradient>
+
+    <!-- Left Ubuntu Glow -->
+    <radialGradient id="ubuntu-glow" cx="24%" cy="48%" r="46%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Right Android Glow -->
+    <radialGradient id="android-glow" cx="76%" cy="48%" r="46%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Center Bridge Glow -->
+    <radialGradient id="bridge-glow" cx="50%" cy="50%" r="36%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.42"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Ubuntu Warm Amber Gradient -->
+    <linearGradient id="ubuntu-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="55%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#ea580c"/>
+    </linearGradient>
+
+    <!-- Android Emerald Mint Gradient -->
+    <linearGradient id="android-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="55%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+
+    <!-- Center Cyan Bridge Gradient (userSpaceOnUse so horizontal strokes render!) -->
+    <linearGradient id="bridge-grad" x1="200" y1="200" x2="312" y2="312" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7dd3fc"/>
+      <stop offset="45%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <!-- Push Arrow Gradient (Amber-tinted Cyan -> Bright Cyan) -->
+    <linearGradient id="push-arrow-grad" x1="220" y1="236" x2="290" y2="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="45%" stop-color="#7dd3fc"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <!-- Pull Arrow Gradient (Bright Cyan -> Mint-tinted White) -->
+    <linearGradient id="pull-arrow-grad" x1="220" y1="276" x2="290" y2="276" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="55%" stop-color="#a7f3d0"/>
+      <stop offset="100%" stop-color="#e0f2fe"/>
+    </linearGradient>
+
+    <!-- Pane Card Surface -->
+    <linearGradient id="pane-surface" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e2530"/>
+      <stop offset="100%" stop-color="#131820"/>
+    </linearGradient>
+
+    <!-- Soft Drop Shadow for Cards -->
+    <filter id="card-shadow" x="-15%" y="-15%" width="130%" height="135%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#030508" flood-opacity="0.65"/>
+    </filter>
+
+    <!-- Elevated Shadow for Center Bridge Hub -->
+    <filter id="hub-shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0284c7" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.65"/>
+    </filter>
+  </defs>
+
+  <!-- Main Squircle Base -->
+  <rect x="20" y="20" width="472" height="472" rx="108" fill="url(#bg-base)"/>
+
+  <!-- Ambient Workbench Lighting -->
+  <rect x="20" y="20" width="472" height="472" rx="108" fill="url(#ubuntu-glow)"/>
+  <rect x="20" y="20" width="472" height="472" rx="108" fill="url(#android-glow)"/>
+  <rect x="20" y="20" width="472" height="472" rx="108" fill="url(#bridge-glow)"/>
+
+  <!-- Subtle Technical Grid Lines -->
+  <g stroke="#ffffff" stroke-opacity="0.03" stroke-width="1.5">
+    <line x1="256" y1="44" x2="256" y2="468"/>
+    <line x1="44" y1="256" x2="468" y2="256"/>
+  </g>
+
+  <!-- Outer Precision Rim -->
+  <rect x="22" y="22" width="468" height="468" rx="106" stroke="url(#rim-grad)" stroke-width="4.5"/>
+  <rect x="30" y="30" width="452" height="452" rx="98" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1.5"/>
+
+  <!-- ============================================================ -->
+  <!-- LEFT PANE: UBUNTU HOST (Warm Amber #f59e0b)                  -->
+  <!-- ============================================================ -->
+  <g filter="url(#card-shadow)">
+    <!-- Pane Container -->
+    <rect x="64" y="102" width="174" height="308" rx="28" fill="url(#pane-surface)" stroke="#f59e0b" stroke-opacity="0.48" stroke-width="2.5"/>
+
+    <!-- Top Accent Header Strip -->
+    <path d="M 65.5 130 C 65.5 115.36 77.36 103.5 92 103.5 L 210 103.5 C 224.64 103.5 236.5 115.36 236.5 130 L 236.5 152 L 65.5 152 Z" fill="url(#ubuntu-grad)" fill-opacity="0.20"/>
+    <line x1="65" y1="152" x2="237" y2="152" stroke="#f59e0b" stroke-opacity="0.32" stroke-width="1.5"/>
+
+    <!-- Window Control Dots -->
+    <circle cx="90" cy="128" r="5.5" fill="#f59e0b"/>
+    <circle cx="108" cy="128" r="5.5" fill="#f59e0b" fill-opacity="0.45"/>
+    <rect x="130" y="124" width="76" height="8" rx="4" fill="#f59e0b" fill-opacity="0.35"/>
+
+    <!-- Ubuntu Host Emblem -->
+    <g transform="translate(151, 224)">
+      <circle cx="0" cy="0" r="40" fill="#f59e0b" fill-opacity="0.12" stroke="url(#ubuntu-grad)" stroke-width="3"/>
+      <!-- Inner Ring -->
+      <circle cx="0" cy="0" r="18" stroke="url(#ubuntu-grad)" stroke-width="5.5"/>
+      <!-- Cutout gaps around the 3 nodes -->
+      <circle cx="24" cy="0" r="9.5" fill="#181f29"/>
+      <circle cx="-12" cy="-20.8" r="9.5" fill="#181f29"/>
+      <circle cx="-12" cy="20.8" r="9.5" fill="#181f29"/>
+      <!-- 3 Satellite Nodes -->
+      <circle cx="24" cy="0" r="6" fill="url(#ubuntu-grad)"/>
+      <circle cx="-12" cy="-20.8" r="6" fill="url(#ubuntu-grad)"/>
+      <circle cx="-12" cy="20.8" r="6" fill="url(#ubuntu-grad)"/>
+    </g>
+
+    <!-- File List Rows (Ubuntu Pane) -->
+    <rect x="86" y="294" width="130" height="16" rx="6" fill="#f59e0b" fill-opacity="0.22" stroke="#f59e0b" stroke-opacity="0.5" stroke-width="1.2"/>
+    <circle cx="97" cy="302" r="3.5" fill="#fbbf24"/>
+    <rect x="107" y="299" width="84" height="6" rx="3" fill="#fde68a"/>
+
+    <rect x="86" y="322" width="130" height="14" rx="5" fill="#ffffff" fill-opacity="0.06"/>
+    <rect x="94" y="326" width="74" height="6" rx="3" fill="#94a3b8" fill-opacity="0.65"/>
+
+    <rect x="86" y="348" width="130" height="14" rx="5" fill="#ffffff" fill-opacity="0.06"/>
+    <rect x="94" y="352" width="96" height="6" rx="3" fill="#94a3b8" fill-opacity="0.45"/>
+
+    <!-- Bottom Status Pill -->
+    <rect x="86" y="378" width="64" height="10" rx="5" fill="#f59e0b" fill-opacity="0.45"/>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- RIGHT PANE: ANDROID DEVICE (Emerald Mint #10b981)            -->
+  <!-- ============================================================ -->
+  <g filter="url(#card-shadow)">
+    <!-- Pane Container -->
+    <rect x="274" y="102" width="174" height="308" rx="28" fill="url(#pane-surface)" stroke="#10b981" stroke-opacity="0.48" stroke-width="2.5"/>
+
+    <!-- Top Accent Header Strip -->
+    <path d="M 275.5 130 C 275.5 115.36 287.36 103.5 302 103.5 L 420 103.5 C 434.64 103.5 446.5 115.36 446.5 130 L 446.5 152 L 275.5 152 Z" fill="url(#android-grad)" fill-opacity="0.20"/>
+    <line x1="275" y1="152" x2="447" y2="152" stroke="#10b981" stroke-opacity="0.32" stroke-width="1.5"/>
+
+    <!-- Header Dots & Bar -->
+    <circle cx="300" cy="128" r="5.5" fill="#10b981"/>
+    <circle cx="318" cy="128" r="5.5" fill="#10b981" fill-opacity="0.45"/>
+    <rect x="340" y="124" width="76" height="8" rx="4" fill="#10b981" fill-opacity="0.35"/>
+
+    <!-- Android Bot Emblem -->
+    <g transform="translate(361, 224)">
+      <circle cx="0" cy="0" r="40" fill="#10b981" fill-opacity="0.12" stroke="url(#android-grad)" stroke-width="3"/>
+      <!-- Antennae -->
+      <line x1="-13" y1="-12" x2="-21" y2="-24" stroke="url(#android-grad)" stroke-width="4" stroke-linecap="round"/>
+      <line x1="13" y1="-12" x2="21" y2="-24" stroke="url(#android-grad)" stroke-width="4" stroke-linecap="round"/>
+      <!-- Bot Head Dome -->
+      <path d="M -24 10 C -24 -7.67 -13.25 -18 0 -18 C 13.25 -18 24 -7.67 24 10 C 24 13.3 21.3 16 18 16 L -18 16 C -21.3 16 -24 13.3 -24 10 Z" fill="url(#android-grad)"/>
+      <!-- Eyes -->
+      <circle cx="-10" cy="-1" r="3.2" fill="#0d1014"/>
+      <circle cx="10" cy="-1" r="3.2" fill="#0d1014"/>
+    </g>
+
+    <!-- File List Rows (Android Pane) -->
+    <rect x="296" y="294" width="130" height="16" rx="6" fill="#10b981" fill-opacity="0.22" stroke="#10b981" stroke-opacity="0.5" stroke-width="1.2"/>
+    <circle cx="307" cy="302" r="3.5" fill="#34d399"/>
+    <rect x="317" y="299" width="84" height="6" rx="3" fill="#a7f3d0"/>
+
+    <rect x="296" y="322" width="130" height="14" rx="5" fill="#ffffff" fill-opacity="0.06"/>
+    <rect x="304" y="326" width="90" height="6" rx="3" fill="#94a3b8" fill-opacity="0.65"/>
+
+    <rect x="296" y="348" width="130" height="14" rx="5" fill="#ffffff" fill-opacity="0.06"/>
+    <rect x="304" y="352" width="68" height="6" rx="3" fill="#94a3b8" fill-opacity="0.45"/>
+
+    <!-- Bottom Status Pill -->
+    <rect x="296" y="378" width="64" height="10" rx="5" fill="#10b981" fill-opacity="0.45"/>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- CENTER BRIDGE HUB: HIGH-SPEED ADB TRANSFER (#38bdf8)         -->
+  <!-- ============================================================ -->
+  <g filter="url(#hub-shadow)">
+    <!-- Central Rounded Squircle Bridge Badge -->
+    <rect x="198" y="198" width="116" height="116" rx="34" fill="#0d131a" stroke="url(#bridge-grad)" stroke-width="4"/>
+    <rect x="206" y="206" width="100" height="100" rx="27" fill="url(#bridge-grad)" fill-opacity="0.16"/>
+
+    <!-- Top Arrow: PUSH TO ANDROID (Right ->) -->
+    <path d="M 224 238 L 286 238 M 269 222 L 287 238 L 269 254" stroke="url(#push-arrow-grad)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Bottom Arrow: PULL TO UBUNTU (<- Left) -->
+    <path d="M 288 274 L 226 274 M 243 258 L 225 274 L 243 290" stroke="url(#pull-arrow-grad)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

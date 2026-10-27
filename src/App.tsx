@@ -266,9 +266,13 @@ export const App: React.FC = () => {
       {/* Top Workbench Header */}
       <header className="top-header">
         <div className="brand-cluster">
-          <div className="brand-mark" aria-hidden="true">
-            <ArrowLeftRight size={16} />
-          </div>
+          <img
+            src="/logo.svg"
+            alt="DroidBridge Logo"
+            className="brand-logo"
+            width={30}
+            height={30}
+          />
           <h1 className="brand-title">DroidBridge</h1>
           <span
             className={`runtime-pill ${isDesktopApp ? 'is-desktop' : 'is-web'}`}

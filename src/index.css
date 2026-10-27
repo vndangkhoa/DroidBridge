@@ -130,6 +130,14 @@ body,
   color: var(--accent-bridge);
 }
 
+.brand-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  display: block;
+  flex-shrink: 0;
+}
+
 .brand-title {
   margin: 0;
   font-size: 15px;

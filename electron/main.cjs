@@ -132,6 +132,7 @@ async function createMainWindow() {
     minHeight: 640,
     backgroundColor: '#0d1014',
     title: 'DroidBridge — Ubuntu ↔ Android File Manager',
+    icon: path.join(PROJECT_ROOT, 'public/icon.png'),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

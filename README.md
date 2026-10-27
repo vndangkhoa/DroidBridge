@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/logo.svg" alt="DroidBridge Logo" width="110" height="110" style="border-radius: 24px; box-shadow: 0 12px 32px rgba(56,189,248,0.25);">
+</p>
+
 <h1 align="center">DroidBridge</h1>
 
 <p align="center">
@@ -138,6 +142,10 @@ Connect over Wi-Fi (`adb connect <ip>:<port>`, defaulting to port `5555`) direct
 
 ```text
 DroidBridge/
+├── public/
+│   ├── logo.svg                   # Primary vector app logo (Dual-Pane Ubuntu <-> Android ADB emblem)
+│   ├── icon.png                   # 512x512 desktop & repository icon
+│   └── favicon.png                # 64x64 browser favicon
 ├── electron/
 │   ├── main.cjs                   # Electron main process (auto-starts Express server & native dialogs)
 │   └── preload.cjs                # Context-isolated desktop bridge (window.droidBridgeDesktop)
