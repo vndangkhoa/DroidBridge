@@ -15,12 +15,14 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  FolderUp,
   HardDrive,
   Loader2,
   PackagePlus,
   Pencil,
   RefreshCw,
   Search,
+  Share2,
   Smartphone,
   Square,
   Trash2,
@@ -39,8 +41,14 @@ import type {
   AndroidDevice,
   DirectoryListingResponse,
   FileEntry,
+  RelativeUploadItem,
   StorageVolume,
 } from '../types';
+import {
+  extractOsDrop,
+  fileListToUploadItems,
+  hasOsFiles,
+} from '../utils/dropzone';
 import { PathPromptModal } from './DeviceModals';
 
 interface FilePaneProps {
@@ -59,7 +67,10 @@ interface FilePaneProps {
   onDeleteEntries: (paths: string[]) => Promise<void>;
   onInstallApk?: (apkPath: string) => void;
   onUploadFiles?: (files: FileList) => Promise<void>;
+  onUploadItems?: (items: RelativeUploadItem[]) => Promise<void>;
+  onDropOsPaths?: (paths: string[]) => Promise<void>;
   onDropFromOtherPane?: (sourcePaths: string[]) => void;
+  onShareP2p?: (paths: string[]) => void;
   device?: AndroidDevice | null;
   extraVolumes?: StorageVolume[];
 }
@@ -177,19 +188,23 @@ export const FilePane: React.FC<FilePaneProps> = ({
   onDeleteEntries,
   onInstallApk,
   onUploadFiles,
+  onUploadItems,
+  onDropOsPaths,
   onDropFromOtherPane,
+  onShareP2p,
   device,
   extraVolumes,
 }) => {
   const captionId = useId();
   const fileUploadRef = useRef<HTMLInputElement | null>(null);
+  const folderUploadRef = useRef<HTMLInputElement | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [editingPath, setEditingPath] = useState(false);
   const [pathInputValue, setPathInputValue] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
-  const [dragOver, setDragOver] = useState(false);
+  const [dragMode, setDragMode] = useState<'none' | 'pane' | 'os'>('none');
   const [uploading, setUploading] = useState(false);
 
   // Modal state for New Folder or Rename
@@ -324,10 +339,16 @@ export const FilePane: React.FC<FilePaneProps> = ({
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const files = e.target.files;
-    if (!files || files.length === 0 || !onUploadFiles) return;
+    if (!files || files.length === 0 || (!onUploadItems && !onUploadFiles)) {
+      return;
+    }
     setUploading(true);
     try {
-      await onUploadFiles(files);
+      if (onUploadItems) {
+        await onUploadItems(fileListToUploadItems(files));
+      } else if (onUploadFiles) {
+        await onUploadFiles(files);
+      }
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -344,34 +365,81 @@ export const FilePane: React.FC<FilePaneProps> = ({
 
   return (
     <section
-      className={`file-pane${dragOver ? ' drag-over' : ''}`}
+      className={`file-pane${dragMode !== 'none' ? ' drag-over' : ''}`}
       aria-label={title}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('application/x-droidbridge-paths')) {
           e.preventDefault();
           e.dataTransfer.dropEffect = 'copy';
-          setDragOver(true);
+          if (dragMode !== 'pane') setDragMode('pane');
+        } else if (hasOsFiles(e.dataTransfer)) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          if (dragMode !== 'os') setDragMode('os');
         }
       }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        setDragOver(false);
-        const raw = e.dataTransfer.getData('application/x-droidbridge-paths');
-        if (!raw || !onDropFromOtherPane) return;
-        try {
-          const parsed = JSON.parse(raw) as {
-            sourceKind: 'ubuntu' | 'android';
-            paths: string[];
-          };
-          if (parsed.sourceKind !== kind && parsed.paths?.length > 0) {
-            e.preventDefault();
-            onDropFromOtherPane(parsed.paths);
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setDragMode('none');
+        }
+      }}
+      onDrop={async (e) => {
+        setDragMode('none');
+        if (e.dataTransfer.types.includes('application/x-droidbridge-paths')) {
+          const raw = e.dataTransfer.getData('application/x-droidbridge-paths');
+          if (!raw || !onDropFromOtherPane) return;
+          try {
+            const parsed = JSON.parse(raw) as {
+              sourceKind: 'ubuntu' | 'android';
+              paths: string[];
+            };
+            if (parsed.sourceKind !== kind && parsed.paths?.length > 0) {
+              e.preventDefault();
+              onDropFromOtherPane(parsed.paths);
+            }
+          } catch {
+            // Ignore invalid drag payload
           }
-        } catch {
-          // Ignore invalid drag payload
+          return;
+        }
+
+        if (hasOsFiles(e.dataTransfer)) {
+          e.preventDefault();
+          if (kind === 'android' && !device) return;
+          setUploading(true);
+          try {
+            const extracted = await extractOsDrop(e.dataTransfer);
+            if (
+              extracted.mode === 'native-paths' &&
+              extracted.nativePaths.length > 0 &&
+              onDropOsPaths
+            ) {
+              await onDropOsPaths(extracted.nativePaths);
+            } else if (extracted.uploadItems.length > 0 && onUploadItems) {
+              await onUploadItems(extracted.uploadItems);
+            } else if (
+              extracted.uploadItems.length > 0 &&
+              onUploadFiles &&
+              e.dataTransfer.files.length > 0
+            ) {
+              await onUploadFiles(e.dataTransfer.files);
+            }
+          } finally {
+            setUploading(false);
+          }
         }
       }}
     >
+      {dragMode !== 'none' && (
+        <div className="pane-drop-banner">
+          <Upload size={14} />
+          <span>
+            {dragMode === 'os'
+              ? `Drop files or folders from your OS here to transfer into ${title} (${currentPath})`
+              : `Drop items here to transfer into ${title} (${currentPath})`}
+          </span>
+        </div>
+      )}
       {/* Pane Header */}
       <header className="pane-header">
         <div className="pane-title-group">
@@ -530,7 +598,7 @@ export const FilePane: React.FC<FilePaneProps> = ({
             />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
             {kind === 'ubuntu' && window.droidBridgeDesktop?.selectDirectory && (
               <button
                 type="button"
@@ -543,7 +611,7 @@ export const FilePane: React.FC<FilePaneProps> = ({
               </button>
             )}
 
-            {kind === 'android' && onUploadFiles && (
+            {(onUploadItems || onUploadFiles) && (
               <>
                 <input
                   ref={fileUploadRef}
@@ -552,12 +620,22 @@ export const FilePane: React.FC<FilePaneProps> = ({
                   style={{ display: 'none' }}
                   onChange={handleFileUploadChange}
                 />
+                <input
+                  ref={folderUploadRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleFileUploadChange}
+                  {...({ webkitdirectory: '', directory: '' } as any)}
+                />
                 <button
                   type="button"
-                  className="btn btn-xs btn-android"
+                  className={`btn btn-xs ${
+                    kind === 'android' ? 'btn-android' : 'btn-ubuntu'
+                  }`}
                   onClick={() => fileUploadRef.current?.click()}
-                  disabled={!device || uploading}
-                  title="Upload files from browser to this Android directory"
+                  disabled={(kind === 'android' && !device) || uploading}
+                  title={`Upload files (or drag & drop from OS) to ${title}`}
                 >
                   {uploading ? (
                     <Loader2 size={13} className="spin" />
@@ -566,7 +644,43 @@ export const FilePane: React.FC<FilePaneProps> = ({
                   )}
                   <span>Upload Files</span>
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-xs"
+                  onClick={() => folderUploadRef.current?.click()}
+                  disabled={(kind === 'android' && !device) || uploading}
+                  title={`Upload an entire folder recursively to ${title}`}
+                >
+                  {uploading ? (
+                    <Loader2 size={13} className="spin" />
+                  ) : (
+                    <FolderUp size={13} />
+                  )}
+                  <span>Upload Folder</span>
+                </button>
               </>
+            )}
+
+            {onShareP2p && (
+              <button
+                type="button"
+                className="btn btn-xs btn-bridge"
+                onClick={() =>
+                  onShareP2p(
+                    selectedPaths.size > 0
+                      ? Array.from(selectedPaths)
+                      : [currentPath]
+                  )
+                }
+                disabled={kind === 'android' && !device}
+                title="Share selected files/folders (or current directory) over Wi-Fi P2P QR & LAN link"
+              >
+                <Share2 size={13} />
+                <span>
+                  Share P2P
+                  {selectedPaths.size > 0 ? ` (${selectedPaths.size})` : ''}
+                </span>
+              </button>
             )}
 
             <button
@@ -843,6 +957,18 @@ export const FilePane: React.FC<FilePaneProps> = ({
                                 <Download size={12} />
                               </a>
                             )}
+
+                          {onShareP2p && (
+                            <button
+                              type="button"
+                              className="btn btn-icon-only btn-xs"
+                              onClick={() => onShareP2p([entry.path])}
+                              title={`Share ${entry.name} over Wi-Fi P2P`}
+                              aria-label={`Share ${entry.name} over Wi-Fi P2P`}
+                            >
+                              <Share2 size={12} />
+                            </button>
+                          )}
 
                           <button
                             type="button"

@@ -45,7 +45,7 @@ export interface DirectoryListingResponse {
 
 export interface TransferJob {
   id: string;
-  direction: 'push' | 'pull' | 'apk-install';
+  direction: 'push' | 'pull' | 'apk-install' | 'p2p-share' | 'local-copy';
   serial: string;
   sourcePaths: string[];
   targetPath: string;
@@ -56,3 +56,59 @@ export interface TransferJob {
   summary: string;
   error?: string;
 }
+
+export interface RelativeUploadItem {
+  file: File;
+  relativePath: string;
+}
+
+export interface P2pShareItem {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size: number;
+}
+
+export interface P2pShareSession {
+  id: string;
+  token: string;
+  sourceKind: 'ubuntu' | 'android';
+  serial?: string;
+  title: string;
+  items: P2pShareItem[];
+  uploadTargetDir: string;
+  allowUpload: boolean;
+  pin?: string;
+  createdAt: number;
+  expiresAt: number;
+  downloadCount: number;
+  uploadCount: number;
+  urls: string[];
+  qrSvg: string;
+}
+
+export interface P2pDiscoveredPeer {
+  ip: string;
+  hostname?: string;
+  mac?: string;
+  iface?: string;
+  services: ('adb' | 'ssh' | 'http' | 'lan')[];
+  adbPort?: number;
+  sshPort?: number;
+  source: 'mdns' | 'arp' | 'hotspot';
+}
+
+export interface P2pNetworkStatus {
+  hostname: string;
+  port: number;
+  addresses: { ip: string; iface: string; isP2pOrHotspot: boolean }[];
+  hotspot: {
+    supported: boolean;
+    active: boolean;
+    ssid?: string;
+    password?: string;
+    iface?: string;
+    ip?: string;
+  };
+}
+

@@ -1082,3 +1082,268 @@ dialog::backdrop {
 .spin {
   animation: spin 1s linear infinite;
 }
+
+/* External OS & Cross-Pane Drag-Over Banner */
+.pane-drop-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background-color: var(--accent-bridge-soft);
+  border-bottom: 1px dashed var(--accent-bridge);
+  color: #e0f2fe;
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+/* Wi-Fi P2P Share & Peer Discovery Modal */
+.p2p-modal-body {
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+.p2p-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 10px;
+}
+
+.p2p-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  background-color: var(--bg-toolbar);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.p2p-tab-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background-color: var(--bg-hover);
+}
+
+.p2p-tab-btn.active {
+  color: var(--accent-bridge);
+  border-color: rgba(56, 189, 248, 0.45);
+  background-color: var(--accent-bridge-soft);
+}
+
+.p2p-tab-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background-color: var(--bg-canvas);
+  color: var(--accent-bridge);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.p2p-section-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.p2p-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: var(--bg-toolbar);
+  border: 1px solid var(--border-subtle);
+}
+
+.p2p-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.p2p-selection-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+}
+
+.p2p-selected-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.p2p-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.p2p-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.p2p-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.p2p-checkbox-label input[type='checkbox'] {
+  accent-color: var(--accent-bridge);
+}
+
+.p2p-active-shares-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.p2p-empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 22px 16px;
+  border-radius: 8px;
+  background-color: var(--bg-canvas);
+  border: 1px dashed var(--border-strong);
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.p2p-shares-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.p2p-share-item-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 560px) {
+  .p2p-share-item-card {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
+.p2p-qr-frame {
+  width: 132px;
+  height: 132px;
+  padding: 6px;
+  border-radius: 8px;
+  background-color: #ffffff;
+  border: 1px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.p2p-qr-frame svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.p2p-share-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+.p2p-url-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.p2p-url-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  background-color: var(--bg-pane);
+  border: 1px solid var(--border-subtle);
+}
+
+.p2p-url-code {
+  font-size: 11.5px;
+  color: var(--accent-bridge);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p2p-share-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.p2p-peers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.p2p-peer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 7px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+}
+

@@ -1,6 +1,10 @@
 import type {
   AndroidDevice,
   DirectoryListingResponse,
+  P2pDiscoveredPeer,
+  P2pNetworkStatus,
+  P2pShareSession,
+  RelativeUploadItem,
   TransferJob,
 } from './types';
 
@@ -10,6 +14,8 @@ export interface DroidBridgeDesktopAPI {
   selectDirectory?: () => Promise<string | null>;
   selectFiles?: () => Promise<string[]>;
   openExternalPath?: (targetPath: string) => Promise<void>;
+  openExternal?: (url: string) => Promise<boolean>;
+  getPathForFile?: (file: File) => string;
 }
 
 declare global {
@@ -119,6 +125,42 @@ export const api = {
     });
   },
 
+  async localCopy(
+    sourcePaths: string[],
+    targetDir: string
+  ): Promise<{ ok: boolean; job?: TransferJob }> {
+    return requestJson('/api/local/copy', {
+      method: 'POST',
+      body: JSON.stringify({ sourcePaths, targetDir }),
+    });
+  },
+
+  async uploadToLocal(
+    targetDir: string,
+    items: FileList | File[] | RelativeUploadItem[]
+  ): Promise<{ ok: boolean; uploaded?: number; job?: TransferJob }> {
+    const formData = new FormData();
+    formData.append('targetDir', targetDir);
+    const list = Array.from(items as ArrayLike<File | RelativeUploadItem>);
+    for (const item of list) {
+      if ('file' in item && item.file instanceof File) {
+        formData.append('files', item.file);
+        formData.append(
+          'relativePaths',
+          item.relativePath || item.file.webkitRelativePath || item.file.name
+        );
+      } else {
+        const f = item as File;
+        formData.append('files', f);
+        formData.append('relativePaths', f.webkitRelativePath || f.name);
+      }
+    }
+    return requestJson('/api/local/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
   async listAndroidDirectory(
     serial: string,
     path?: string
@@ -166,14 +208,25 @@ export const api = {
   async uploadToAndroid(
     serial: string,
     targetDir: string,
-    files: FileList | File[]
-  ): Promise<{ ok: boolean; uploaded?: number }> {
+    items: FileList | File[] | RelativeUploadItem[]
+  ): Promise<{ ok: boolean; uploaded?: number; job?: TransferJob }> {
     const formData = new FormData();
     formData.append('serial', serial);
     formData.append('targetDir', targetDir);
-    Array.from(files).forEach((file) => {
-      formData.append('files', file);
-    });
+    const list = Array.from(items as ArrayLike<File | RelativeUploadItem>);
+    for (const item of list) {
+      if ('file' in item && item.file instanceof File) {
+        formData.append('files', item.file);
+        formData.append(
+          'relativePaths',
+          item.relativePath || item.file.webkitRelativePath || item.file.name
+        );
+      } else {
+        const f = item as File;
+        formData.append('files', f);
+        formData.append('relativePaths', f.webkitRelativePath || f.name);
+      }
+    }
     return requestJson('/api/android/upload', {
       method: 'POST',
       body: formData,
@@ -230,6 +283,60 @@ export const api = {
       '/api/transfer/jobs'
     );
     return data.jobs ?? [];
+  },
+
+  async getP2pStatus(): Promise<P2pNetworkStatus> {
+    return requestJson('/api/p2p/status');
+  },
+
+  async discoverP2pPeers(): Promise<P2pDiscoveredPeer[]> {
+    const data = await requestJson<{ peers: P2pDiscoveredPeer[] }>(
+      '/api/p2p/peers'
+    );
+    return data.peers ?? [];
+  },
+
+  async listP2pShares(): Promise<P2pShareSession[]> {
+    const data = await requestJson<{ shares: P2pShareSession[] }>(
+      '/api/p2p/shares'
+    );
+    return data.shares ?? [];
+  },
+
+  async createP2pShare(payload: {
+    sourceKind: 'ubuntu' | 'android';
+    serial?: string;
+    paths: string[];
+    uploadTargetDir?: string;
+    allowUpload?: boolean;
+    pin?: string;
+    title?: string;
+  }): Promise<{ ok: boolean; share: P2pShareSession }> {
+    return requestJson('/api/p2p/shares', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async revokeP2pShare(id: string): Promise<{ ok: boolean }> {
+    return requestJson(`/api/p2p/shares/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async toggleP2pHotspot(payload: {
+    action: 'start' | 'stop';
+    ssid?: string;
+    password?: string;
+  }): Promise<{
+    ok: boolean;
+    message: string;
+    hotspot: P2pNetworkStatus['hotspot'];
+  }> {
+    return requestJson('/api/p2p/hotspot', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 };
 

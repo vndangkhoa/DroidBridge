@@ -12,6 +12,11 @@
    - **Right Pane — Android Device (`adb`):** Browse `/sdcard`, `Download`, `DCIM`, `RetroArch`, and external microSD volumes (`/storage/XXXX-XXXX`), inspect sizes/permissions/timestamps, create/rename/delete folders, upload/download via browser, and pull selected items directly to Ubuntu.
 3. **High-Speed ADB Transfer & Device Management:**
    - Direct `adb push` and `adb pull` transfers between panes with transfer queue tracking.
+   - **External OS File & Folder Drag-and-Drop:** Drag files and recursive folders directly from Ubuntu Files, Windows Explorer, or macOS Finder into either the Local Host pane or Android/Linux pane (using zero-copy `webUtils.getPathForFile` in Electron Desktop Mode and recursive `webkitGetAsEntry` directory traversal in Web Mode), plus dedicated **Upload Files** and **Upload Folder** controls.
+   - **Wi-Fi P2P File & Folder Sharing + Auto-Discovery:**
+     - Instant **QR Code & HTTP P2P Share Portal** (`/p2p/s/:token`) to share any selected files or folders (with on-the-fly `.tar.gz` folder streaming and bi-directional browser dropzone uploads) with any phone, tablet, handheld, or PC over Wi-Fi without needing ADB or SSH.
+     - **Zero-Config Peer Discovery** combining mDNS (`avahi-browse`), ARP neighbor scanning, and fast TCP port probing (`5555` ADB / `22` SSH) for 1-click wireless connection.
+     - **Direct Wi-Fi P2P Hotspot** controller via NetworkManager (`nmcli`) for router-less peer-to-peer transfers.
    - One-click `.apk` sideloading from either the Ubuntu pane or browser file upload (`adb install -r`).
-   - Wireless ADB connection dialog (`adb connect <ip>:<port>`).
-   - Live Android screen capture preview modal (`adb exec-out screencap -p`).
+   - Wireless ADB & Linux SSH connection dialog (`adb connect <ip>:<port>` / `ssh://user@host:port`).
+   - Live Android & Linux handheld (`DRM` / `fb0`) screen capture preview modal.

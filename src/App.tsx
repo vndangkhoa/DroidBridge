@@ -10,6 +10,7 @@ import {
   Loader2,
   Monitor,
   PackagePlus,
+  QrCode,
   RefreshCw,
   Smartphone,
   Terminal,
@@ -30,6 +31,7 @@ import {
   ScreenPreviewModal,
   WifiAdbModal,
 } from './components/DeviceModals';
+import { P2pShareModal } from './components/P2pShareModal';
 import { TransferDrawer } from './components/TransferDrawer';
 
 export const App: React.FC = () => {
@@ -79,6 +81,11 @@ export const App: React.FC = () => {
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
   const [screenModalOpen, setScreenModalOpen] = useState(false);
   const [apkModalOpen, setApkModalOpen] = useState(false);
+  const [p2pModalState, setP2pModalState] = useState<{
+    open: boolean;
+    sourceKind: 'ubuntu' | 'android';
+    paths: string[];
+  }>({ open: false, sourceKind: 'ubuntu', paths: [] });
 
   const selectedDevice =
     devices.find((d) => d.serial === selectedSerial) ?? null;
@@ -398,6 +405,30 @@ export const App: React.FC = () => {
             <span>Connect Wi-Fi / SSH</span>
           </button>
 
+          <button
+            type="button"
+            className="btn btn-bridge"
+            onClick={() => {
+              if (androidSelected.size > 0 && selectedDevice) {
+                setP2pModalState({
+                  open: true,
+                  sourceKind: 'android',
+                  paths: Array.from(androidSelected),
+                });
+              } else {
+                setP2pModalState({
+                  open: true,
+                  sourceKind: 'ubuntu',
+                  paths: Array.from(localSelected),
+                });
+              }
+            }}
+            title="Share files or folders over Wi-Fi P2P QR code, start P2P Hotspot, or auto-discover nearby peers"
+          >
+            <QrCode size={13} />
+            <span>Wi-Fi P2P Share</span>
+          </button>
+
           {selectedDevice &&
             (selectedDevice.transport === 'wifi' ||
               selectedDevice.transport === 'ssh' ||
@@ -488,6 +519,31 @@ export const App: React.FC = () => {
           }}
           onInstallApk={handleDirectInstallApk}
           onDropFromOtherPane={(sourcePaths) => handlePullToLocal(sourcePaths)}
+          onDropOsPaths={async (paths) => {
+            const targetDir = localListing?.currentPath || '/';
+            await api.localCopy(paths, targetDir);
+            showBanner(
+              'info',
+              `Copied ${paths.length} item(s) into ${hostOsLabel}:${targetDir}`
+            );
+            await Promise.all([loadLocalDirectory(targetDir), loadJobs()]);
+          }}
+          onUploadItems={async (items) => {
+            const targetDir = localListing?.currentPath || '/';
+            await api.uploadToLocal(targetDir, items);
+            showBanner(
+              'info',
+              `Uploaded ${items.length} file(s) into ${hostOsLabel}:${targetDir}`
+            );
+            await Promise.all([loadLocalDirectory(targetDir), loadJobs()]);
+          }}
+          onShareP2p={(paths) =>
+            setP2pModalState({
+              open: true,
+              sourceKind: 'ubuntu',
+              paths,
+            })
+          }
         />
 
         {/* Center Transfer Bridge Column */}
@@ -614,8 +670,34 @@ export const App: React.FC = () => {
               loadJobs(),
             ]);
           }}
+          onUploadItems={async (items) => {
+            if (!selectedDevice) return;
+            const targetDir =
+              androidListing?.currentPath ||
+              selectedDevice.defaultPath ||
+              '/sdcard';
+            await api.uploadToAndroid(selectedDevice.serial, targetDir, items);
+            showBanner(
+              'info',
+              `Uploaded ${items.length} file(s) to ${selectedDevice.model}:${targetDir}`
+            );
+            await Promise.all([
+              loadAndroidDirectory(selectedDevice.serial, targetDir),
+              loadJobs(),
+            ]);
+          }}
+          onDropOsPaths={async (paths) => {
+            await handlePushToAndroid(paths);
+          }}
           onDropFromOtherPane={(sourcePaths) =>
             handlePushToAndroid(sourcePaths)
+          }
+          onShareP2p={(paths) =>
+            setP2pModalState({
+              open: true,
+              sourceKind: 'android',
+              paths,
+            })
           }
           device={selectedDevice}
           extraVolumes={selectedDevice?.volumes}
@@ -632,6 +714,30 @@ export const App: React.FC = () => {
         onConnected={(msg) => {
           showBanner('info', msg);
           loadDevices(false);
+        }}
+      />
+
+      <P2pShareModal
+        open={p2pModalState.open}
+        onClose={() =>
+          setP2pModalState((prev) => ({ ...prev, open: false }))
+        }
+        initialSourceKind={p2pModalState.sourceKind}
+        initialPaths={p2pModalState.paths}
+        localCurrentPath={localListing?.currentPath || '/'}
+        androidCurrentPath={
+          androidListing?.currentPath ||
+          selectedDevice?.defaultPath ||
+          '/sdcard'
+        }
+        selectedDevice={selectedDevice}
+        onConnectedPeer={(msg) => {
+          showBanner('info', msg);
+          loadDevices(false);
+        }}
+        onNotify={(type, msg) => {
+          showBanner(type, msg);
+          loadJobs();
         }}
       />
 

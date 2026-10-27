@@ -132,6 +132,13 @@ function registerIpcHandlers() {
     }
     return false;
   });
+
+  ipcMain.handle('shell:openPath', async (_event, targetPath) => {
+    if (typeof targetPath === 'string') {
+      return shell.openPath(targetPath);
+    }
+    return '';
+  });
 }
 
 async function createMainWindow() {

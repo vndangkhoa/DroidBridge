@@ -6,8 +6,10 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Copy,
   Loader2,
   PackageCheck,
+  Share2,
   XCircle,
 } from 'lucide-react';
 import type { TransferJob } from '../types';
@@ -121,7 +123,9 @@ export const TransferDrawer: React.FC<TransferDrawerProps> = ({
                   </span>
 
                   <span
-                    className="meta-badge"
+                    className={`meta-badge${
+                      job.direction === 'p2p-share' ? ' online' : ''
+                    }`}
                     style={{ textTransform: 'uppercase' }}
                   >
                     {job.direction === 'push' && <ArrowRight size={11} />}
@@ -129,7 +133,15 @@ export const TransferDrawer: React.FC<TransferDrawerProps> = ({
                     {job.direction === 'apk-install' && (
                       <PackageCheck size={11} />
                     )}
-                    <span>{job.direction}</span>
+                    {job.direction === 'p2p-share' && <Share2 size={11} />}
+                    {job.direction === 'local-copy' && <Copy size={11} />}
+                    <span>
+                      {job.direction === 'p2p-share'
+                        ? 'P2P WI-FI'
+                        : job.direction === 'local-copy'
+                        ? 'LOCAL DROP'
+                        : job.direction}
+                    </span>
                   </span>
 
                   <span

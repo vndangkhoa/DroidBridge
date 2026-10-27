@@ -27,7 +27,7 @@ function formatModePermissions(
   return typeChar + chars.join('');
 }
 
-function resolveInputPath(dirPath?: string): string {
+export function resolveInputPath(dirPath?: string): string {
   const home = os.homedir();
   if (!dirPath || !dirPath.trim()) {
     return home;
@@ -193,17 +193,52 @@ export async function deleteLocal(paths: string[]): Promise<void> {
   }
 }
 
+async function sumPathBytesRecursive(targetPath: string, depth = 0): Promise<number> {
+  if (depth > 10) return 0;
+  try {
+    const stat = await fs.promises.lstat(targetPath);
+    if (stat.isSymbolicLink()) return 0;
+    if (stat.isFile()) return stat.size;
+    if (stat.isDirectory()) {
+      const entries = await fs.promises.readdir(targetPath, { withFileTypes: true });
+      let sum = 0;
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) continue;
+        sum += await sumPathBytesRecursive(path.join(targetPath, entry.name), depth + 1);
+      }
+      return sum;
+    }
+  } catch {
+    // ignore permission or broken entry errors
+  }
+  return 0;
+}
+
 export async function calculateLocalTotalBytes(paths: string[]): Promise<number> {
   let total = 0;
   for (const p of paths) {
-    try {
-      const stat = await fs.promises.stat(p);
-      if (stat.isFile()) {
-        total += stat.size;
-      }
-    } catch {
-      // ignore
-    }
+    const resolved = resolveInputPath(p);
+    total += await sumPathBytesRecursive(resolved, 0);
   }
   return total;
+}
+
+export async function copyLocalEntries(
+  sourcePaths: string[],
+  targetDir: string
+): Promise<number> {
+  if (!sourcePaths || sourcePaths.length === 0) return 0;
+  const resolvedTarget = resolveInputPath(targetDir);
+  await fs.promises.mkdir(resolvedTarget, { recursive: true });
+
+  let copiedCount = 0;
+  for (const src of sourcePaths) {
+    const resolvedSrc = resolveInputPath(src);
+    const dest = path.join(resolvedTarget, path.basename(resolvedSrc));
+    if (resolvedSrc !== dest) {
+      await fs.promises.cp(resolvedSrc, dest, { recursive: true, force: true });
+      copiedCount += 1;
+    }
+  }
+  return copiedCount;
 }

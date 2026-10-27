@@ -23,11 +23,14 @@ import {
 } from './adb';
 import {
   calculateLocalTotalBytes,
+  copyLocalEntries,
   deleteLocal,
   listLocalDirectory,
   mkdirLocal,
   renameLocal,
+  resolveInputPath,
 } from './localFs';
+import { registerP2pRoutes, sanitizeRelativePath } from './p2p';
 import {
   connectSshDevice,
   deleteSsh,
@@ -238,6 +241,97 @@ app.post('/api/local/delete', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/local/copy', async (req: Request, res: Response) => {
+  const { sourcePaths, targetDir, targetPath } = req.body || {};
+  const rawTarget = String(targetDir || targetPath || '').trim();
+  if (!rawTarget || !Array.isArray(sourcePaths) || sourcePaths.length === 0) {
+    res.status(400).json({ error: 'sourcePaths array and targetDir are required' });
+    return;
+  }
+
+  const cleanSources = sourcePaths.map(String).filter(Boolean);
+  const resolvedTarget = resolveInputPath(rawTarget);
+  const totalBytes = await calculateLocalTotalBytes(cleanSources);
+  const label =
+    cleanSources.length === 1
+      ? path.basename(cleanSources[0])
+      : `${cleanSources.length} items`;
+
+  const job = createJob(
+    'local-copy',
+    'ubuntu-local',
+    cleanSources,
+    resolvedTarget,
+    `Copy ${label} -> ${resolvedTarget}`,
+    totalBytes
+  );
+
+  try {
+    const copiedCount = await copyLocalEntries(cleanSources, resolvedTarget);
+    job.status = 'completed';
+    job.completedAt = Date.now();
+    res.json({ ok: true, copiedCount, job });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    job.status = 'failed';
+    job.completedAt = Date.now();
+    job.error = message;
+    res.status(500).json({ error: message, job });
+  }
+});
+
+app.post('/api/local/upload', upload.any(), async (req: Request, res: Response) => {
+  const uploadedFiles = (req.files as Express.Multer.File[]) || [];
+  const rawTarget = String(req.body?.targetDir || req.body?.path || os.homedir()).trim();
+
+  if (uploadedFiles.length === 0) {
+    res.status(400).json({ error: 'Uploaded files are required' });
+    return;
+  }
+
+  const resolvedTarget = resolveInputPath(rawTarget);
+  const rawRel = req.body?.relativePaths;
+  const relList: string[] = Array.isArray(rawRel)
+    ? rawRel.map(String)
+    : typeof rawRel === 'string'
+      ? [rawRel]
+      : [];
+
+  const totalBytes = uploadedFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+  const job = createJob(
+    'local-copy',
+    'ubuntu-local',
+    uploadedFiles.map((f, idx) => relList[idx] || f.originalname),
+    resolvedTarget,
+    `Drop ${uploadedFiles.length} file(s) -> ${resolvedTarget}`,
+    totalBytes
+  );
+
+  try {
+    await fs.promises.mkdir(resolvedTarget, { recursive: true });
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      const file = uploadedFiles[i];
+      const safeRel = sanitizeRelativePath(relList[i] || '', file.originalname);
+      const destPath = path.join(resolvedTarget, safeRel);
+      await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
+      await fs.promises.cp(file.path, destPath, { force: true });
+    }
+    job.status = 'completed';
+    job.completedAt = Date.now();
+    res.json({ ok: true, uploaded: uploadedFiles.length, job });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    job.status = 'failed';
+    job.completedAt = Date.now();
+    job.error = message;
+    res.status(500).json({ error: message, job });
+  } finally {
+    for (const f of uploadedFiles) {
+      await fs.promises.rm(path.dirname(f.path), { recursive: true, force: true }).catch(() => {});
+    }
+  }
+});
+
 // Remote Device (Android ADB + Linux ADB + Linux SSH) filesystem endpoints
 app.get('/api/android/list', async (req: Request, res: Response) => {
   try {
@@ -365,26 +459,49 @@ app.post('/api/android/upload', upload.any(), async (req: Request, res: Response
     return;
   }
 
-  const localTempPaths = uploadedFiles.map((f) => f.path);
+  const rawRel = req.body?.relativePaths;
+  const relList: string[] = Array.isArray(rawRel)
+    ? rawRel.map(String)
+    : typeof rawRel === 'string'
+      ? [rawRel]
+      : [];
+
   const totalBytes = uploadedFiles.reduce((acc, f) => acc + (f.size || 0), 0);
   const job = createJob(
     'push',
     serial,
-    uploadedFiles.map((f) => f.originalname),
+    uploadedFiles.map((f, idx) => relList[idx] || f.originalname),
     targetDir,
     `Uploaded ${uploadedFiles.length} file(s) to ${targetDir}`,
     totalBytes
   );
 
+  const stageRoot = path.join(UPLOAD_BASE_DIR, `stage-${crypto.randomUUID()}`);
   try {
+    await fs.promises.mkdir(stageRoot, { recursive: true });
+    const topLevelNames = new Set<string>();
+
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      const file = uploadedFiles[i];
+      const safeRel = sanitizeRelativePath(relList[i] || '', file.originalname);
+      topLevelNames.add(safeRel.split('/')[0]);
+      const stagedPath = path.join(stageRoot, safeRel);
+      await fs.promises.mkdir(path.dirname(stagedPath), { recursive: true });
+      await fs.promises.cp(file.path, stagedPath, { force: true });
+    }
+
+    const topLevelPaths = Array.from(topLevelNames).map((name) =>
+      path.join(stageRoot, name)
+    );
+
     if (isSshSerial(serial)) {
-      await pushToSsh(serial, localTempPaths, targetDir);
+      await pushToSsh(serial, topLevelPaths, targetDir);
     } else {
-      await pushToAndroid(serial, localTempPaths, targetDir);
+      await pushToAndroid(serial, topLevelPaths, targetDir);
     }
     job.status = 'completed';
     job.completedAt = Date.now();
-    res.json({ ok: true, job, ...job });
+    res.json({ ok: true, uploaded: uploadedFiles.length, job, ...job });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     job.status = 'failed';
@@ -392,6 +509,7 @@ app.post('/api/android/upload', upload.any(), async (req: Request, res: Response
     job.error = message;
     res.status(500).json({ error: message, job });
   } finally {
+    await fs.promises.rm(stageRoot, { recursive: true, force: true }).catch(() => {});
     for (const f of uploadedFiles) {
       await fs.promises.rm(path.dirname(f.path), { recursive: true, force: true }).catch(() => {});
     }
@@ -532,6 +650,9 @@ app.get('/api/transfer/jobs', (_req: Request, res: Response) => {
   res.json({ jobs: transferJobs.slice(0, 50) });
 });
 
+// Register Wi-Fi P2P Sharing, Peer Auto-Discovery & Direct Hotspot routes
+registerP2pRoutes(app, createJob);
+
 // Serve built frontend static assets if dist/index.html exists
 const currentDir = path.resolve(process.cwd());
 const distDir = fs.existsSync(path.join(currentDir, 'dist/index.html'))
@@ -547,7 +668,11 @@ const distIndexHtml = path.join(distDir, 'index.html');
 if (fs.existsSync(distIndexHtml)) {
   app.use(express.static(distDir));
   app.use((req: Request, res: Response, next) => {
-    if (req.method !== 'GET' || req.path.startsWith('/api/')) {
+    if (
+      req.method !== 'GET' ||
+      req.path.startsWith('/api/') ||
+      req.path.startsWith('/p2p/')
+    ) {
       next();
       return;
     }
