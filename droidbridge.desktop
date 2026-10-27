@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=DroidBridge
+GenericName=Ubuntu to Android File Manager
+Comment=Dual-Pane Ubuntu <-> Android File Manager & ADB Workstation
+Exec=/home/khoavo/Documents/antigravity/jolly-heisenberg/scripts/start-desktop.sh
+Path=/home/khoavo/Documents/antigravity/jolly-heisenberg
+Icon=folder-remote
+Terminal=false
+Categories=Utility;FileTools;System;FileManager;
+Keywords=Android;ADB;Ubuntu;FileManager;Transfer;TrimUI;
+StartupNotify=true
+StartupWMClass=droidbridge
