@@ -95,7 +95,7 @@ export const App: React.FC = () => {
       setLocalListing(data);
       setLocalSelected(new Set());
     } catch (err: any) {
-      setLocalError(err?.message || 'Failed to read Ubuntu directory');
+      setLocalError(err?.message || 'Failed to read local host directory');
     } finally {
       setLocalLoading(false);
     }
@@ -173,6 +173,7 @@ export const App: React.FC = () => {
       .getHealth()
       .then((h) => {
         if (h.hostname) setHostname(h.hostname);
+        if (h.platform) setHostPlatform(h.platform);
       })
       .catch(() => {});
     loadLocalDirectory();
@@ -229,7 +230,7 @@ export const App: React.FC = () => {
         'info',
         `Pulled ${sources.length} ${
           sources.length === 1 ? 'item' : 'items'
-        } to Ubuntu:${targetDir}`
+        } to ${hostOsLabel}:${targetDir}`
       );
       setAndroidSelected(new Set());
       await Promise.all([loadLocalDirectory(targetDir), loadJobs()]);
@@ -246,13 +247,14 @@ export const App: React.FC = () => {
       showBanner('error', 'Connect an Android device before installing an APK.');
       return;
     }
+    const apkName = apkPath.split(/[\\/]/).pop() || apkPath;
     setTransferBusy(true);
-    showBanner('info', `Installing ${apkPath.split('/').pop()} on ${selectedDevice.model}...`);
+    showBanner('info', `Installing ${apkName} on ${selectedDevice.model}...`);
     try {
       await api.installApkFromPath(selectedDevice.serial, apkPath);
       showBanner(
         'info',
-        `Successfully installed ${apkPath.split('/').pop()} on ${selectedDevice.model}`
+        `Successfully installed ${apkName} on ${selectedDevice.model}`
       );
       await loadJobs();
     } catch (err: any) {
@@ -291,12 +293,14 @@ export const App: React.FC = () => {
             className={`runtime-pill ${isDesktopApp ? 'is-desktop' : 'is-web'}`}
             title={
               isDesktopApp
-                ? 'Running inside native Ubuntu Electron Desktop shell'
+                ? `Running inside native ${hostOsLabel} Electron Desktop shell`
                 : 'Running in Web Browser Mode'
             }
           >
             {isDesktopApp ? <Monitor size={12} /> : <Globe size={12} />}
-            <span>{isDesktopApp ? 'Ubuntu Desktop App' : 'Web App Mode'}</span>
+            <span>
+              {isDesktopApp ? `${hostOsLabel} Desktop App` : 'Web App Mode'}
+            </span>
           </span>
         </div>
 
@@ -457,10 +461,10 @@ export const App: React.FC = () => {
 
       {/* Dual-Pane Commander Grid */}
       <main className="workbench-grid">
-        {/* Left Pane: Ubuntu Host */}
+        {/* Left Pane: Local Host */}
         <FilePane
           kind="ubuntu"
-          title="Ubuntu Host"
+          title={hostTitle}
           subtitle={hostname}
           listing={localListing}
           loading={localLoading}
@@ -479,7 +483,7 @@ export const App: React.FC = () => {
           }}
           onDeleteEntries={async (paths) => {
             await api.localDelete(paths);
-            showBanner('info', `Deleted ${paths.length} Ubuntu item(s)`);
+            showBanner('info', `Deleted ${paths.length} ${hostOsLabel} item(s)`);
             await loadLocalDirectory(localListing?.currentPath);
           }}
           onInstallApk={handleDirectInstallApk}
@@ -498,7 +502,7 @@ export const App: React.FC = () => {
               transferBusy
             }
             onClick={() => handlePushToAndroid()}
-            title="Push selected Ubuntu files/folders to current Android directory"
+            title={`Push selected ${hostOsLabel} files/folders to current Android directory`}
           >
             {transferBusy ? (
               <Loader2 size={16} className="spin" color="var(--accent-bridge)" />
@@ -523,14 +527,14 @@ export const App: React.FC = () => {
               transferBusy
             }
             onClick={() => handlePullToLocal()}
-            title="Pull selected Android files/folders to current Ubuntu directory"
+            title={`Pull selected Android files/folders to current ${hostOsLabel} directory`}
           >
             {transferBusy ? (
               <Loader2 size={16} className="spin" color="var(--accent-bridge)" />
             ) : (
               <ArrowLeft size={16} color="var(--accent-bridge)" />
             )}
-            <span>← Pull to Ubuntu</span>
+            <span>← Pull to {hostOsLabel}</span>
             <span className="count-pill">{androidSelected.size} selected</span>
           </button>
 

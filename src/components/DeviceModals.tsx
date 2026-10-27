@@ -450,7 +450,7 @@ export const ApkInstallModal: React.FC<ApkInstallModalProps> = ({
         await api.installApkFromPath(device.serial, localApkPath.trim());
         onInstalled(`Installed ${localApkPath.trim()} on ${device.model}`);
       } else {
-        setError('Choose an .apk file or enter an Ubuntu path.');
+        setError('Choose an .apk file or enter a local host path.');
         setBusy(false);
         return;
       }
@@ -477,7 +477,7 @@ export const ApkInstallModal: React.FC<ApkInstallModalProps> = ({
         <div className="dialog-body">
           <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 12 }}>
             Select an <code className="mono-num">.apk</code> package from your browser or
-            specify a full Ubuntu host path to sideload with{' '}
+            specify a full local host path to sideload with{' '}
             <code className="mono-num">adb install -r</code>.
           </p>
           <label
@@ -506,7 +506,7 @@ export const ApkInstallModal: React.FC<ApkInstallModalProps> = ({
               fontWeight: 600,
             }}
           >
-            <span>Or Ubuntu Local APK Path</span>
+            <span>Or Local Host APK Path</span>
             <input
               type="text"
               className="text-input mono"
