@@ -26,7 +26,15 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { api, formatBytes, formatTimestamp, joinPosixPath } from '../api';
+import {
+  api,
+  formatBytes,
+  formatTimestamp,
+  getParentPath,
+  isWindowsPath,
+  joinPath,
+  joinPosixPath,
+} from '../api';
 import type {
   AndroidDevice,
   DirectoryListingResponse,
@@ -198,8 +206,29 @@ export const FilePane: React.FC<FilePaneProps> = ({
 
   const currentPath = listing?.currentPath || (kind === 'ubuntu' ? '/' : '/sdcard');
   const activeVolume = listing?.volume ?? extraVolumes?.[0] ?? null;
+  const isWinPath = useMemo(
+    () => kind === 'ubuntu' && isWindowsPath(currentPath),
+    [kind, currentPath]
+  );
 
   const breadcrumbs = useMemo(() => {
+    const winDriveMatch = currentPath.match(/^([A-Za-z]:)(?:[\\/](.*))?$/);
+    if (winDriveMatch) {
+      const drive = winDriveMatch[1].toUpperCase();
+      const rest = (winDriveMatch[2] || '').replace(/[\\/]+$/, '');
+      const items: { label: string; path: string }[] = [
+        { label: drive, path: `${drive}\\` },
+      ];
+      if (!rest) return items;
+      const parts = rest.split(/[\\/]+/).filter(Boolean);
+      let acc = drive;
+      for (const part of parts) {
+        acc += `\\${part}`;
+        items.push({ label: part, path: acc });
+      }
+      return items;
+    }
+
     const clean = currentPath.replace(/\/+$/, '');
     if (!clean || clean === '/') {
       return [{ label: '/', path: '/' }];
@@ -373,9 +402,13 @@ export const FilePane: React.FC<FilePaneProps> = ({
       {combinedBookmarks.length > 0 && (
         <nav className="bookmarks-bar" aria-label={`${title} quick bookmarks`}>
           {combinedBookmarks.map((bm) => {
+            const isRootBookmark =
+              bm.path === '/' || /^[A-Za-z]:[\\/]?$/.test(bm.path);
             const isActive =
               currentPath === bm.path ||
-              (bm.path !== '/' && currentPath.startsWith(`${bm.path}/`));
+              (!isRootBookmark &&
+                (currentPath.startsWith(`${bm.path}/`) ||
+                  currentPath.startsWith(`${bm.path}\\`)));
             return (
               <button
                 key={`${bm.label}-${bm.path}`}
@@ -441,7 +474,9 @@ export const FilePane: React.FC<FilePaneProps> = ({
             >
               {breadcrumbs.map((crumb, idx) => (
                 <React.Fragment key={crumb.path}>
-                  {idx > 0 && <span className="crumb-sep">/</span>}
+                  {idx > 0 && (
+                    <span className="crumb-sep">{isWinPath ? '\\' : '/'}</span>
+                  )}
                   <button
                     type="button"
                     className={`crumb-btn${
@@ -501,7 +536,7 @@ export const FilePane: React.FC<FilePaneProps> = ({
                 type="button"
                 className="btn btn-xs btn-ubuntu"
                 onClick={handleNativeFolderPick}
-                title="Open native Ubuntu folder chooser"
+                title={`Open native ${title} folder chooser`}
               >
                 <FolderOpen size={13} />
                 <span>Pick Native Folder</span>
@@ -869,16 +904,22 @@ export const FilePane: React.FC<FilePaneProps> = ({
         }
         onClose={() => setPromptState((prev) => ({ ...prev, open: false }))}
         onConfirm={async (newName) => {
+          const usePosix = kind === 'android';
           if (promptState.mode === 'mkdir') {
-            const fullPath = joinPosixPath(currentPath, newName);
+            const fullPath = usePosix
+              ? joinPosixPath(currentPath, newName)
+              : joinPath(currentPath, newName);
             await onCreateFolder(fullPath);
           } else if (promptState.targetEntry) {
-            const parentDir =
-              promptState.targetEntry.path.substring(
-                0,
-                promptState.targetEntry.path.lastIndexOf('/')
-              ) || '/';
-            const newPath = joinPosixPath(parentDir, newName);
+            const parentDir = usePosix
+              ? promptState.targetEntry.path.substring(
+                  0,
+                  promptState.targetEntry.path.lastIndexOf('/')
+                ) || '/'
+              : getParentPath(promptState.targetEntry.path, currentPath);
+            const newPath = usePosix
+              ? joinPosixPath(parentDir, newName)
+              : joinPath(parentDir, newName);
             await onRenameEntry(promptState.targetEntry.path, newPath);
           }
         }}

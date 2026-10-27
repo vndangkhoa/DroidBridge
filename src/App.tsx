@@ -12,6 +12,7 @@ import {
   PackagePlus,
   RefreshCw,
   Smartphone,
+  Terminal,
   Unplug,
   Usb,
   Wifi,
@@ -34,10 +35,21 @@ import { TransferDrawer } from './components/TransferDrawer';
 export const App: React.FC = () => {
   const isDesktopApp = Boolean(window.droidBridgeDesktop?.isDesktop);
 
-  const [hostname, setHostname] = useState<string>('ubuntu-host');
+  const [hostname, setHostname] = useState<string>('local-host');
+  const [hostPlatform, setHostPlatform] = useState<string>(
+    () => window.droidBridgeDesktop?.platform || 'linux'
+  );
   const [devices, setDevices] = useState<AndroidDevice[]>([]);
   const [selectedSerial, setSelectedSerial] = useState<string>('');
   const [devicesLoading, setDevicesLoading] = useState<boolean>(false);
+
+  const hostOsLabel =
+    hostPlatform === 'win32'
+      ? 'Windows'
+      : hostPlatform === 'darwin'
+      ? 'macOS'
+      : 'Ubuntu / Linux';
+  const hostTitle = `${hostOsLabel} Host`;
 
   // Ubuntu Pane state
   const [localListing, setLocalListing] =
@@ -182,7 +194,8 @@ export const App: React.FC = () => {
   const handlePushToAndroid = async (pathsToPush?: string[]) => {
     const sources = pathsToPush ?? Array.from(localSelected);
     if (!selectedDevice || sources.length === 0) return;
-    const targetDir = androidListing?.currentPath || '/sdcard';
+    const targetDir =
+      androidListing?.currentPath || selectedDevice.defaultPath || '/sdcard';
     setTransferBusy(true);
     try {
       await api.pushToAndroid(selectedDevice.serial, sources, targetDir);
@@ -328,7 +341,9 @@ export const App: React.FC = () => {
                     selectedDevice.state === 'device' ? ' online' : ''
                   }`}
                 >
-                  {selectedDevice.transport === 'wifi' ? (
+                  {selectedDevice.transport === 'ssh' ? (
+                    <Terminal size={11} />
+                  ) : selectedDevice.transport === 'wifi' ? (
                     <Wifi size={11} />
                   ) : (
                     <Usb size={11} />
@@ -337,10 +352,12 @@ export const App: React.FC = () => {
                 </span>
 
                 {selectedDevice.androidVersion && (
-                  <span className="meta-badge" title="Android Version & ABI">
+                  <span className="meta-badge" title="OS Version & ABI">
                     <Cpu size={11} />
                     <span>
-                      Android {selectedDevice.androidVersion}
+                      {selectedDevice.osType === 'linux'
+                        ? selectedDevice.androidVersion
+                        : `Android ${selectedDevice.androidVersion}`}
                       {selectedDevice.abi ? ` • ${selectedDevice.abi}` : ''}
                     </span>
                   </span>
@@ -362,7 +379,7 @@ export const App: React.FC = () => {
             className="btn"
             onClick={() => loadDevices(true)}
             disabled={devicesLoading}
-            title="Rescan connected USB & Wireless ADB devices"
+            title="Rescan connected USB, Wi-Fi ADB, and Linux SSH devices"
           >
             <RefreshCw size={13} className={devicesLoading ? 'spin' : ''} />
             <span>Refresh Devices</span>
@@ -374,11 +391,12 @@ export const App: React.FC = () => {
             onClick={() => setWifiModalOpen(true)}
           >
             <Wifi size={13} />
-            <span>Connect Wi-Fi ADB</span>
+            <span>Connect Wi-Fi / SSH</span>
           </button>
 
           {selectedDevice &&
             (selectedDevice.transport === 'wifi' ||
+              selectedDevice.transport === 'ssh' ||
               selectedDevice.serial.includes(':')) && (
               <button
                 type="button"
@@ -405,7 +423,16 @@ export const App: React.FC = () => {
             type="button"
             className="btn btn-android"
             onClick={() => setApkModalOpen(true)}
-            disabled={!selectedDevice || selectedDevice.state !== 'device'}
+            disabled={
+              !selectedDevice ||
+              selectedDevice.state !== 'device' ||
+              selectedDevice.osType === 'linux'
+            }
+            title={
+              selectedDevice?.osType === 'linux'
+                ? 'APK installation is only available for Android devices'
+                : 'Sideload .apk package'
+            }
           >
             <PackagePlus size={13} />
             <span>Install APK</span>
@@ -478,7 +505,9 @@ export const App: React.FC = () => {
             ) : (
               <ArrowRight size={16} color="var(--accent-bridge)" />
             )}
-            <span>Push to Android →</span>
+            <span>
+              Push to {selectedDevice?.osType === 'linux' ? 'Linux' : 'Android'} →
+            </span>
             <span className="count-pill">{localSelected.size} selected</span>
           </button>
 
@@ -567,7 +596,10 @@ export const App: React.FC = () => {
           }}
           onUploadFiles={async (files) => {
             if (!selectedDevice) return;
-            const targetDir = androidListing?.currentPath || '/sdcard';
+            const targetDir =
+              androidListing?.currentPath ||
+              selectedDevice.defaultPath ||
+              '/sdcard';
             await api.uploadToAndroid(selectedDevice.serial, targetDir, files);
             showBanner(
               'info',

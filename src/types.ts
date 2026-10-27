@@ -28,7 +28,10 @@ export interface AndroidDevice {
   sdkVersion: string;
   abi: string;
   batteryLevel: number | null;
-  transport: 'usb' | 'wifi';
+  transport: 'usb' | 'wifi' | 'ssh';
+  osType?: 'android' | 'linux';
+  protocol?: 'adb' | 'ssh';
+  defaultPath?: string;
   volumes: StorageVolume[];
 }
 

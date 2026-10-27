@@ -1,4 +1,7 @@
+import crypto from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type {
@@ -12,6 +15,47 @@ const execFileAsync = promisify(execFile);
 
 const MAX_BUFFER = 50 * 1024 * 1024; // 50 MB
 
+export function resolveAdbBinary(): string {
+  if (process.env.ADB_PATH && fs.existsSync(process.env.ADB_PATH)) {
+    return process.env.ADB_PATH;
+  }
+
+  const home = os.homedir();
+  const candidates: string[] =
+    process.platform === 'darwin'
+      ? [
+          '/opt/homebrew/bin/adb',
+          '/usr/local/bin/adb',
+          path.join(home, 'Library/Android/sdk/platform-tools/adb'),
+        ]
+      : process.platform === 'win32'
+        ? [
+            path.join(
+              process.env.LOCALAPPDATA || path.join(home, 'AppData/Local'),
+              'Android/Sdk/platform-tools/adb.exe'
+            ),
+            'C:\\platform-tools\\adb.exe',
+            'C:\\Android\\platform-tools\\adb.exe',
+          ]
+        : [
+            '/usr/bin/adb',
+            '/usr/local/bin/adb',
+            path.join(home, 'Android/Sdk/platform-tools/adb'),
+          ];
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return process.platform === 'win32' ? 'adb.exe' : 'adb';
+}
+
 export function escapeShellArg(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
@@ -20,9 +64,10 @@ async function runAdb(
   args: string[],
   timeoutMs = 30000
 ): Promise<{ stdout: string; stderr: string }> {
-  const { stdout, stderr } = await execFileAsync('adb', args, {
+  const { stdout, stderr } = await execFileAsync(resolveAdbBinary(), args, {
     maxBuffer: MAX_BUFFER,
     timeout: timeoutMs,
+    windowsHide: true,
   });
   return {
     stdout: stdout.toString(),
@@ -30,7 +75,7 @@ async function runAdb(
   };
 }
 
-async function runAdbShell(
+export async function runAdbShell(
   serial: string,
   command: string,
   timeoutMs = 20000
@@ -39,7 +84,7 @@ async function runAdbShell(
   return stdout.replace(/\r\n/g, '\n');
 }
 
-function parseDfLine(
+export function parseDfLine(
   output: string,
   name: string,
   mountPath: string,
@@ -49,7 +94,7 @@ function parseDfLine(
     .replace(/\r\n/g, '\n')
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !l.startsWith('Filesystem'));
+    .filter((l) => l.length > 0 && !l.startsWith('Filesystem') && !l.startsWith('df:'));
 
   if (lines.length === 0) return null;
   const lastLine = lines[lines.length - 1];
@@ -76,8 +121,12 @@ function parseDfLine(
 export async function getAndroidVolumes(serial: string): Promise<StorageVolume[]> {
   const volumes: StorageVolume[] = [];
 
+  // 1. Check standard Android /sdcard
   try {
-    const sdcardDf = await runAdbShell(serial, 'df -Pk /sdcard 2>/dev/null || true');
+    const sdcardDf = await runAdbShell(
+      serial,
+      '[ -e /sdcard ] && df -Pk /sdcard 2>/dev/null || true'
+    );
     const internalVol = parseDfLine(sdcardDf, 'Internal Storage', '/sdcard', 'internal');
     if (internalVol) {
       volumes.push(internalVol);
@@ -86,8 +135,30 @@ export async function getAndroidVolumes(serial: string): Promise<StorageVolume[]
     // ignore
   }
 
+  // 2. Check Linux Handheld / TrimUI /mnt/SDCARD
   try {
-    const storageListRaw = await runAdbShell(serial, 'ls -1 /storage 2>/dev/null || true');
+    const trimuiSdDf = await runAdbShell(
+      serial,
+      '[ -d /mnt/SDCARD ] && df -Pk /mnt/SDCARD 2>/dev/null || true'
+    );
+    const trimuiVol = parseDfLine(trimuiSdDf, 'SD Card (/mnt/SDCARD)', '/mnt/SDCARD', 'sdcard');
+    if (
+      trimuiVol &&
+      trimuiVol.totalBytes > 0 &&
+      !volumes.some((v) => v.path === trimuiVol.path)
+    ) {
+      volumes.push(trimuiVol);
+    }
+  } catch {
+    // ignore
+  }
+
+  // 3. Check Android /storage/<UUID>
+  try {
+    const storageListRaw = await runAdbShell(
+      serial,
+      '[ -d /storage ] && ls -1 /storage 2>/dev/null || true'
+    );
     const entries = storageListRaw
       .split('\n')
       .map((s) => s.trim())
@@ -110,11 +181,11 @@ export async function getAndroidVolumes(serial: string): Promise<StorageVolume[]
     // ignore
   }
 
-  // Also check handheld game partitions such as /mnt/kv_games (e.g. TrimUI Smart Pro S)
+  // 4. Check handheld game partitions such as /mnt/kv_games
   try {
     const kvDf = await runAdbShell(
       serial,
-      'df -Pk /mnt/kv_games 2>/dev/null || true'
+      '[ -d /mnt/kv_games ] && df -Pk /mnt/kv_games 2>/dev/null || true'
     );
     const hasKvDir = await runAdbShell(
       serial,
@@ -133,6 +204,19 @@ export async function getAndroidVolumes(serial: string): Promise<StorageVolume[]
     // ignore
   }
 
+  // 5. Fallback to Linux root filesystem (/) if no /sdcard volume was found
+  if (!volumes.some((v) => v.kind === 'internal')) {
+    try {
+      const rootDf = await runAdbShell(serial, 'df -Pk / 2>/dev/null || true');
+      const rootVol = parseDfLine(rootDf, 'Root System (/)', '/', 'system');
+      if (rootVol) {
+        volumes.push(rootVol);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   return volumes;
 }
 
@@ -149,7 +233,12 @@ export async function listDevices(): Promise<AndroidDevice[]> {
     .replace(/\r\n/g, '\n')
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith('List of devices') && !line.startsWith('*'));
+    .filter(
+      (line) =>
+        line.length > 0 &&
+        !line.startsWith('List of devices') &&
+        !line.startsWith('*')
+    );
 
   const devices: AndroidDevice[] = [];
 
@@ -182,23 +271,35 @@ export async function listDevices(): Promise<AndroidDevice[]> {
       abi: '',
       batteryLevel: null,
       transport: isWifi ? 'wifi' : 'usb',
+      osType: 'android',
+      protocol: 'adb',
+      defaultPath: '/sdcard',
       volumes: [],
     };
 
     if (state === 'device') {
       try {
-        const propCmd = [
-          'echo "MODEL=$(getprop ro.product.model)"',
-          'echo "MANUFACTURER=$(getprop ro.product.manufacturer)"',
-          'echo "PRODUCT=$(getprop ro.product.name)"',
-          'echo "RELEASE=$(getprop ro.build.version.release)"',
-          'echo "SDK=$(getprop ro.build.version.sdk)"',
-          'echo "ABI=$(getprop ro.product.cpu.abi)"',
+        const probeCmd = [
+          'echo "MODEL=$(getprop ro.product.model 2>/dev/null)"',
+          'echo "MANUFACTURER=$(getprop ro.product.manufacturer 2>/dev/null)"',
+          'echo "PRODUCT=$(getprop ro.product.name 2>/dev/null)"',
+          'echo "RELEASE=$(getprop ro.build.version.release 2>/dev/null)"',
+          'echo "SDK=$(getprop ro.build.version.sdk 2>/dev/null)"',
+          'echo "ABI=$(getprop ro.product.cpu.abi 2>/dev/null)"',
+          'echo "UNAME_M=$(uname -m 2>/dev/null)"',
+          'echo "UNAME_R=$(uname -r 2>/dev/null)"',
+          'echo "HOSTNAME=$(cat /etc/hostname 2>/dev/null | head -n 1)"',
+          'echo "DT_MODEL=$(tr \'\\0\' \' \' < /proc/device-tree/model 2>/dev/null)"',
+          'echo "OS_PRETTY=$(grep \'^PRETTY_NAME=\' /etc/os-release 2>/dev/null | cut -d= -f2- | tr -d \'\\"\')"',
+          'echo "SYS_BAT=$(cat /sys/class/power_supply/axp2202-battery/capacity /sys/class/power_supply/BAT0/capacity /sys/class/power_supply/battery/capacity 2>/dev/null | head -n 1)"',
+          'echo "HAS_SDCARD=$([ -e /sdcard ] && echo 1 || echo 0)"',
+          'echo "HAS_MNT_SDCARD=$([ -d /mnt/SDCARD ] && echo 1 || echo 0)"',
+          'echo "HAS_KVOS=$([ -x /mnt/SDCARD/.system/bin/gamma_launcher ] && echo 1 || echo 0)"',
         ].join('; ');
 
         const [propOut, batteryOut, volumes] = await Promise.all([
-          runAdbShell(serial, propCmd, 8000).catch(() => ''),
-          runAdbShell(serial, 'dumpsys battery', 8000).catch(() => ''),
+          runAdbShell(serial, probeCmd, 8000).catch(() => ''),
+          runAdbShell(serial, 'dumpsys battery 2>/dev/null || true', 5000).catch(() => ''),
           getAndroidVolumes(serial).catch(() => []),
         ]);
 
@@ -212,18 +313,68 @@ export async function listDevices(): Promise<AndroidDevice[]> {
           }
         }
 
-        if (propMap.MODEL) deviceInfo.model = propMap.MODEL;
-        if (propMap.MANUFACTURER) deviceInfo.manufacturer = propMap.MANUFACTURER;
-        if (propMap.PRODUCT) deviceInfo.product = propMap.PRODUCT;
-        if (propMap.RELEASE) deviceInfo.androidVersion = propMap.RELEASE;
-        if (propMap.SDK) deviceInfo.sdkVersion = propMap.SDK;
-        if (propMap.ABI) deviceInfo.abi = propMap.ABI;
+        const isAndroid = Boolean(propMap.RELEASE || propMap.SDK);
 
+        if (isAndroid) {
+          deviceInfo.osType = 'android';
+          if (propMap.MODEL) deviceInfo.model = propMap.MODEL;
+          if (propMap.MANUFACTURER) deviceInfo.manufacturer = propMap.MANUFACTURER;
+          if (propMap.PRODUCT) deviceInfo.product = propMap.PRODUCT;
+          if (propMap.RELEASE) deviceInfo.androidVersion = propMap.RELEASE;
+          if (propMap.SDK) deviceInfo.sdkVersion = propMap.SDK;
+          if (propMap.ABI) deviceInfo.abi = propMap.ABI;
+          deviceInfo.defaultPath = '/sdcard';
+        } else {
+          // Linux device over ADB (e.g. TrimUI Smart Pro S / Brick Pro / Linux SBC)
+          deviceInfo.osType = 'linux';
+          const dtModel = (propMap.DT_MODEL || '').toLowerCase();
+          const isSmartProS =
+            dtModel.includes('sun55iw3') || dtModel.includes('tg5050');
+          const isTrimuiBrickOrPro =
+            dtModel.includes('sun50iw10') ||
+            dtModel.includes('tg4040') ||
+            dtModel.includes('tg3040') ||
+            dtModel.includes('tg5040');
+
+          if (isSmartProS) {
+            deviceInfo.model = 'TrimUI Smart Pro S';
+            deviceInfo.manufacturer = 'TrimUI';
+            deviceInfo.product = 'TG5050';
+          } else if (isTrimuiBrickOrPro) {
+            deviceInfo.model = 'TrimUI Handheld';
+            deviceInfo.manufacturer = 'TrimUI';
+            deviceInfo.product = propMap.DT_MODEL || 'Allwinner A133P';
+          } else {
+            deviceInfo.model =
+              propMap.DT_MODEL || propMap.HOSTNAME || serial;
+            deviceInfo.manufacturer = 'Linux';
+            deviceInfo.product = propMap.HOSTNAME || 'Linux Device';
+          }
+
+          deviceInfo.androidVersion =
+            propMap.HAS_KVOS === '1'
+              ? `KV-OS (${propMap.UNAME_R || 'Linux'})`
+              : propMap.OS_PRETTY || `Linux ${propMap.UNAME_R || ''}`.trim();
+          deviceInfo.abi = propMap.UNAME_M || '';
+          deviceInfo.defaultPath =
+            propMap.HAS_MNT_SDCARD === '1'
+              ? '/mnt/SDCARD'
+              : propMap.HAS_SDCARD === '1'
+              ? '/sdcard'
+              : '/';
+        }
+
+        // Battery parsing (Android dumpsys OR Linux /sys/class/power_supply)
         const batMatch = batteryOut.match(/level:\s*(\d+)/i);
         if (batMatch) {
           const parsedBat = Number.parseInt(batMatch[1], 10);
           if (!Number.isNaN(parsedBat)) {
             deviceInfo.batteryLevel = parsedBat;
+          }
+        } else if (propMap.SYS_BAT) {
+          const parsedSysBat = Number.parseInt(propMap.SYS_BAT, 10);
+          if (!Number.isNaN(parsedSysBat)) {
+            deviceInfo.batteryLevel = parsedSysBat;
           }
         }
 
@@ -256,7 +407,9 @@ export async function connectWirelessDevice(
       !lower.includes('cannot connect');
     return {
       ok,
-      message: combined || (ok ? `Connected to ${trimmed}` : `Failed to connect to ${trimmed}`),
+      message:
+        combined ||
+        (ok ? `Connected to ${trimmed}` : `Failed to connect to ${trimmed}`),
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -285,44 +438,132 @@ export async function disconnectDevice(
 }
 
 export async function captureScreenshot(serial: string): Promise<Buffer> {
-  return new Promise<Buffer>((resolve, reject) => {
-    const child = spawn('adb', ['-s', serial, 'exec-out', 'screencap', '-p']);
-    const chunks: Buffer[] = [];
-    const errChunks: Buffer[] = [];
+  // 1. Check if standard Android screencap exists on the device
+  const hasScreencap = await runAdbShell(
+    serial,
+    'command -v screencap >/dev/null 2>&1 && echo "yes" || echo "no"',
+    5000
+  ).catch(() => 'no');
 
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error('Timed out capturing screenshot from Android device'));
-    }, 15000);
+  if (hasScreencap.trim() === 'yes') {
+    return new Promise<Buffer>((resolve, reject) => {
+      const child = spawn(
+        resolveAdbBinary(),
+        ['-s', serial, 'exec-out', 'screencap', '-p'],
+        { windowsHide: true }
+      );
+      const chunks: Buffer[] = [];
+      const errChunks: Buffer[] = [];
 
-    child.stdout.on('data', (chunk: Buffer) => {
-      chunks.push(chunk);
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new Error('Timed out capturing screenshot from Android device'));
+      }, 15000);
+
+      child.stdout.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+
+      child.stderr.on('data', (chunk: Buffer) => {
+        errChunks.push(chunk);
+      });
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        const buffer = Buffer.concat(chunks);
+        if (code !== 0 || buffer.length === 0) {
+          const errMsg =
+            Buffer.concat(errChunks).toString() ||
+            `screencap exited with code ${code}`;
+          reject(new Error(errMsg.trim()));
+          return;
+        }
+        resolve(buffer);
+      });
     });
+  }
 
-    child.stderr.on('data', (chunk: Buffer) => {
-      errChunks.push(chunk);
-    });
+  // 2. Fallback for Linux / TrimUI Smart Pro S (DRM Plane 93 dumb buffer or /dev/fb0)
+  const tempId = crypto.randomUUID();
+  const localRaw = path.join(os.tmpdir(), `droidbridge-fb-${tempId}.raw`);
+  const localPng = path.join(os.tmpdir(), `droidbridge-fb-${tempId}.png`);
+  const remoteRaw = `/tmp/droidbridge-fb.raw`;
 
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
+  try {
+    const dumpScript = `
+      pid=$(pidof gamma_launcher 2>/dev/null | awk '{print $1}')
+      if [ -n "$pid" ] && grep -q "/dev/dri/card0" /proc/$pid/maps 2>/dev/null; then
+        addr_hex=$(grep "/dev/dri/card0" /proc/$pid/maps | head -n 1 | cut -d"-" -f1)
+        dd if=/proc/$pid/mem of=${remoteRaw} bs=4096 skip=$((0x$addr_hex / 4096)) count=900 2>/dev/null
+        echo "MODE=DRM_1280x720"
+      elif [ -e /dev/fb0 ]; then
+        dd if=/dev/fb0 of=${remoteRaw} bs=3686400 count=1 2>/dev/null
+        echo "MODE=FB0_1280x720"
+      else
+        echo "MODE=NONE"
+      fi
+    `;
+    const dumpOut = await runAdbShell(serial, dumpScript, 10000);
+    if (dumpOut.includes('MODE=NONE')) {
+      throw new Error('No Android screencap or Linux framebuffer found on device');
+    }
 
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      const buffer = Buffer.concat(chunks);
-      if (code !== 0 || buffer.length === 0) {
-        const errMsg = Buffer.concat(errChunks).toString() || `screencap exited with code ${code}`;
-        reject(new Error(errMsg.trim()));
-        return;
-      }
-      resolve(buffer);
-    });
-  });
+    await runAdb(['-s', serial, 'pull', remoteRaw, localRaw], 15000);
+    await runAdbShell(serial, `rm -f ${remoteRaw}`, 5000).catch(() => {});
+
+    await execFileAsync(
+      'ffmpeg',
+      [
+        '-y',
+        '-loglevel',
+        'error',
+        '-f',
+        'rawvideo',
+        '-pixel_format',
+        'bgr0',
+        '-video_size',
+        '1280x720',
+        '-i',
+        localRaw,
+        '-frames:v',
+        '1',
+        localPng,
+      ],
+      { windowsHide: true }
+    );
+
+    const pngBuffer = await fs.promises.readFile(localPng);
+    return pngBuffer;
+  } finally {
+    await fs.promises.rm(localRaw, { force: true }).catch(() => {});
+    await fs.promises.rm(localPng, { force: true }).catch(() => {});
+  }
 }
 
-function parseLsLine(line: string, parentDir: string): FileEntry | null {
-  const trimmed = line.trim();
+const MONTHS_MAP: Record<string, number> = {
+  jan: 0,
+  feb: 1,
+  mar: 2,
+  apr: 3,
+  may: 4,
+  jun: 5,
+  jul: 6,
+  aug: 7,
+  sep: 8,
+  oct: 9,
+  nov: 10,
+  dec: 11,
+};
+
+export function parseLsLine(line: string, parentDir: string): FileEntry | null {
+  // Strip any ANSI color escape sequences emitted by BusyBox/GNU ls
+  const cleanedLine = line.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
+  const trimmed = cleanedLine.trim();
   if (!trimmed || trimmed.startsWith('total ')) return null;
 
   // Pattern 1: --time-style=+%s (Unix timestamp in seconds)
@@ -331,13 +572,23 @@ function parseLsLine(line: string, parentDir: string): FileEntry | null {
     /^([bcdlsp-][rwxstST-]{9}[+@.]?)\s+(?:\d+\s+)?\S+\s+\S+\s+(\d+)\s+(\d{9,12})\s+(.+)$/
   );
 
-  // Pattern 2: Standard Android Toybox / GNU ls date time
-  // e.g. drwxrwx--- 2 u0_a48 u0_a48 4096 2026-10-26 17:39 Alarms
+  // Pattern 2: ISO / --full-time (Toybox, GNU ls, or BusyBox --full-time)
+  // e.g. drwxrwxrwx 27 root root 32768 2026-10-24 23:05:00 +0700 Apps
   const isoMatch = !epochMatch
     ? trimmed.match(
         /^([bcdlsp-][rwxstST-]{9}[+@.]?)\s+(?:\d+\s+)?\S+\s+\S+\s+(\d+)?\s*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:\s+[+-]\d{4})?)\s+(.+)$/
       )
     : null;
+
+  // Pattern 3: BusyBox / traditional POSIX ls -la (MMM DD HH:MM or MMM DD YYYY)
+  // e.g. drwxrwxrwx 27 root root 32768 Oct 24 23:05 Apps
+  // e.g. drwxrwxrwx 2 root root 32768 Jan  1  2022 Books
+  const traditionalMatch =
+    !epochMatch && !isoMatch
+      ? trimmed.match(
+          /^([bcdlsp-][rwxstST-]{9}[+@.]?)\s+(?:\d+\s+)?\S+\s+\S+\s+(\d+)\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{2}:\d{2}|\d{4})\s+(.+)$/
+        )
+      : null;
 
   let permissions = '';
   let size = 0;
@@ -356,6 +607,21 @@ function parseLsLine(line: string, parentDir: string): FileEntry | null {
     const parsedTime = Date.parse(dateStr);
     mtime = Number.isNaN(parsedTime) ? 0 : Math.floor(parsedTime / 1000);
     rawName = isoMatch[5];
+  } else if (traditionalMatch) {
+    permissions = traditionalMatch[1];
+    size = Number.parseInt(traditionalMatch[2], 10) || 0;
+    const monthIdx = MONTHS_MAP[traditionalMatch[3].toLowerCase()] ?? 0;
+    const day = Number.parseInt(traditionalMatch[4], 10) || 1;
+    const timeOrYear = traditionalMatch[5];
+    const nowYear = new Date().getFullYear();
+    if (timeOrYear.includes(':')) {
+      const [hh, mm] = timeOrYear.split(':').map((n) => Number.parseInt(n, 10) || 0);
+      mtime = Math.floor(new Date(nowYear, monthIdx, day, hh, mm).getTime() / 1000);
+    } else {
+      const year = Number.parseInt(timeOrYear, 10) || nowYear;
+      mtime = Math.floor(new Date(year, monthIdx, day, 0, 0).getTime() / 1000);
+    }
+    rawName = traditionalMatch[6];
   } else {
     return null;
   }
@@ -372,7 +638,10 @@ function parseLsLine(line: string, parentDir: string): FileEntry | null {
 
   const isDirectory = permissions.startsWith('d');
   const entryPath = path.posix.join(parentDir, name);
-  const ext = !isDirectory && name.includes('.') ? path.posix.extname(name).slice(1).toLowerCase() : undefined;
+  const ext =
+    !isDirectory && name.includes('.')
+      ? path.posix.extname(name).slice(1).toLowerCase()
+      : undefined;
 
   return {
     name,
@@ -388,18 +657,34 @@ function parseLsLine(line: string, parentDir: string): FileEntry | null {
 
 export async function listAndroidDirectory(
   serial: string,
-  dirPath = '/sdcard'
+  dirPath?: string
 ): Promise<DirectoryListingResponse> {
-  const rawTarget = dirPath && dirPath.trim() ? dirPath.trim() : '/sdcard';
-  const normalized = path.posix.normalize(rawTarget);
+  // Resolve default directory if dirPath is missing or if /sdcard does not exist on a Linux device
+  let requestedPath = dirPath && dirPath.trim() ? dirPath.trim() : '';
+  if (!requestedPath || requestedPath === '/sdcard') {
+    const resolvedDefault = await runAdbShell(
+      serial,
+      `if [ -n ${escapeShellArg(requestedPath)} ] && [ -e ${escapeShellArg(
+        requestedPath
+      )} ]; then echo ${escapeShellArg(
+        requestedPath
+      )}; elif [ -d /mnt/SDCARD ]; then echo "/mnt/SDCARD"; elif [ -e /sdcard ]; then echo "/sdcard"; elif [ -d /root ]; then echo "/root"; else echo "/"; fi`,
+      6000
+    ).catch(() => requestedPath || '/sdcard');
+    requestedPath = resolvedDefault.trim() || '/sdcard';
+  }
+
+  const normalized = path.posix.normalize(requestedPath);
   const currentPath = normalized.startsWith('/') ? normalized : `/${normalized}`;
   const parentPath = currentPath === '/' ? null : path.posix.dirname(currentPath);
 
-  const trailingSlashPath = currentPath.endsWith('/') ? currentPath : `${currentPath}/`;
+  const trailingSlashPath = currentPath.endsWith('/')
+    ? currentPath
+    : `${currentPath}/`;
   const escapedDir = escapeShellArg(trailingSlashPath);
 
-  // Use -L so symlinks to directories (like /sdcard, /storage/self/primary, or ROM folders) resolve as directories
-  const lsCmd = `ls -la -L --time-style=+%s ${escapedDir} 2>/dev/null || ls -la -L ${escapedDir} 2>/dev/null || ls -la ${escapedDir}`;
+  // Support Toybox/GNU (--time-style=+%s), BusyBox (--full-time), and standard POSIX ls -la
+  const lsCmd = `ls -la -L --time-style=+%s ${escapedDir} 2>/dev/null || ls -la -L --full-time ${escapedDir} 2>/dev/null || ls -la -L ${escapedDir} 2>/dev/null || ls -la ${escapedDir}`;
 
   const [lsOutput, volumes] = await Promise.all([
     runAdbShell(serial, lsCmd, 20000),
@@ -411,7 +696,9 @@ export async function listAndroidDirectory(
     lsOutput.includes('Not a directory') ||
     lsOutput.includes('Permission denied')
   ) {
-    const firstLine = lsOutput.split('\n').find((l) => l.trim().length > 0) || 'Unable to list directory';
+    const firstLine =
+      lsOutput.split('\n').find((l) => l.trim().length > 0) ||
+      'Unable to list directory';
     if (!lsOutput.includes('total ')) {
       throw new Error(firstLine.trim());
     }
@@ -429,21 +716,40 @@ export async function listAndroidDirectory(
     if (a.isDirectory !== b.isDirectory) {
       return a.isDirectory ? -1 : 1;
     }
-    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    return a.name.localeCompare(b.name, undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
   });
 
-  const bookmarks: { label: string; path: string; kind?: string }[] = [
-    { label: 'Internal Storage', path: '/sdcard', kind: 'internal' },
-    { label: 'Downloads', path: '/sdcard/Download', kind: 'folder' },
-    { label: 'DCIM', path: '/sdcard/DCIM', kind: 'folder' },
-    { label: 'Pictures', path: '/sdcard/Pictures', kind: 'folder' },
-    { label: 'Music', path: '/sdcard/Music', kind: 'folder' },
-    { label: 'Movies', path: '/sdcard/Movies', kind: 'folder' },
-    { label: 'Documents', path: '/sdcard/Documents', kind: 'folder' },
-    { label: 'Android Media', path: '/sdcard/Android/media', kind: 'folder' },
-  ];
+  const isTrimuiOrLinux =
+    volumes.some((v) => v.path === '/mnt/SDCARD') ||
+    !volumes.some((v) => v.path === '/sdcard');
 
-  // Add detected external SD card or handheld game volumes to bookmarks
+  const bookmarks: { label: string; path: string; kind?: string }[] = isTrimuiOrLinux
+    ? [
+        { label: 'SD Card', path: '/mnt/SDCARD', kind: 'sdcard' },
+        { label: 'Roms', path: '/mnt/SDCARD/Roms', kind: 'folder' },
+        { label: 'Apps', path: '/mnt/SDCARD/Apps', kind: 'folder' },
+        { label: 'BIOS', path: '/mnt/SDCARD/BIOS', kind: 'folder' },
+        { label: 'Saves', path: '/mnt/SDCARD/Saves', kind: 'folder' },
+        { label: 'RetroArch', path: '/mnt/SDCARD/RetroArch', kind: 'folder' },
+        { label: 'PortMaster', path: '/mnt/SDCARD/PortMaster', kind: 'folder' },
+        { label: 'Imgs', path: '/mnt/SDCARD/Imgs', kind: 'folder' },
+        { label: 'Movies', path: '/mnt/SDCARD/Movies', kind: 'folder' },
+        { label: 'Root (/)', path: '/', kind: 'system' },
+      ]
+    : [
+        { label: 'Internal Storage', path: '/sdcard', kind: 'internal' },
+        { label: 'Downloads', path: '/sdcard/Download', kind: 'folder' },
+        { label: 'DCIM', path: '/sdcard/DCIM', kind: 'folder' },
+        { label: 'Pictures', path: '/sdcard/Pictures', kind: 'folder' },
+        { label: 'Music', path: '/sdcard/Music', kind: 'folder' },
+        { label: 'Movies', path: '/sdcard/Movies', kind: 'folder' },
+        { label: 'Documents', path: '/sdcard/Documents', kind: 'folder' },
+        { label: 'Android Media', path: '/sdcard/Android/media', kind: 'folder' },
+      ];
+
   for (const vol of volumes) {
     if (vol.kind === 'sdcard' && !bookmarks.some((b) => b.path === vol.path)) {
       bookmarks.push({
@@ -454,9 +760,10 @@ export async function listAndroidDirectory(
     }
   }
 
-  // Determine active volume for currentPath
   let activeVolume: StorageVolume | null = null;
-  const kvVol = volumes.find((v) => v.path === '/sdcard/KV-GAMES' || v.path === '/mnt/kv_games');
+  const kvVol = volumes.find(
+    (v) => v.path === '/sdcard/KV-GAMES' || v.path === '/mnt/kv_games'
+  );
   if (
     kvVol &&
     (currentPath.startsWith('/sdcard/KV-GAMES') ||
@@ -468,7 +775,9 @@ export async function listAndroidDirectory(
     activeVolume = kvVol;
   } else {
     const matched = volumes
-      .filter((v) => currentPath === v.path || currentPath.startsWith(`${v.path}/`))
+      .filter(
+        (v) => currentPath === v.path || currentPath.startsWith(`${v.path}/`)
+      )
       .sort((a, b) => b.path.length - a.path.length)[0];
     if (matched) {
       activeVolume = matched;
@@ -497,7 +806,10 @@ export async function listAndroidDirectory(
   };
 }
 
-export async function mkdirAndroid(serial: string, targetPath: string): Promise<void> {
+export async function mkdirAndroid(
+  serial: string,
+  targetPath: string
+): Promise<void> {
   const normalized = path.posix.normalize(targetPath.trim());
   await runAdbShell(serial, `mkdir -p ${escapeShellArg(normalized)}`);
 }
@@ -509,18 +821,31 @@ export async function renameAndroid(
 ): Promise<void> {
   const normOld = path.posix.normalize(oldPath.trim());
   const normNew = path.posix.normalize(newPath.trim());
-  await runAdbShell(serial, `mv ${escapeShellArg(normOld)} ${escapeShellArg(normNew)}`);
+  await runAdbShell(
+    serial,
+    `mv ${escapeShellArg(normOld)} ${escapeShellArg(normNew)}`
+  );
 }
 
-export async function deleteAndroid(serial: string, paths: string[]): Promise<void> {
+export async function deleteAndroid(
+  serial: string,
+  paths: string[]
+): Promise<void> {
   if (!paths || paths.length === 0) return;
   const escaped = paths
     .map((p) => path.posix.normalize(p.trim()))
-    .filter((p) => p.length > 1 && p !== '/' && p !== '/sdcard')
+    .filter(
+      (p) =>
+        p.length > 1 &&
+        p !== '/' &&
+        p !== '/sdcard' &&
+        p !== '/mnt/SDCARD' &&
+        p !== '/root'
+    )
     .map(escapeShellArg);
 
   if (escaped.length === 0) {
-    throw new Error('Refusing to delete root or empty paths');
+    throw new Error('Refusing to delete root or primary mount paths');
   }
 
   await runAdbShell(serial, `rm -rf ${escaped.join(' ')}`, 60000);
@@ -532,21 +857,28 @@ export async function pushToAndroid(
   remoteDir: string
 ): Promise<void> {
   if (!localPaths || localPaths.length === 0) return;
-  const normalizedRemoteDir = path.posix.normalize(remoteDir.trim() || '/sdcard');
+  const normalizedRemoteDir = path.posix.normalize(
+    remoteDir.trim() || '/sdcard'
+  );
   const targetDirWithSlash = normalizedRemoteDir.endsWith('/')
     ? normalizedRemoteDir
     : `${normalizedRemoteDir}/`;
 
   // Push files via adb push (timeout 10 minutes for large transfers)
-  await runAdb(['-s', serial, 'push', ...localPaths, targetDirWithSlash], 10 * 60 * 1000);
+  await runAdb(
+    ['-s', serial, 'push', ...localPaths, targetDirWithSlash],
+    10 * 60 * 1000
+  );
 
-  // Trigger Android MediaScanner for pushed items (best-effort)
+  // Trigger Android MediaScanner only if `am` command exists on device
   try {
     const scanCommands = localPaths.map((localFile) => {
       const base = path.basename(localFile);
       const remoteFile = path.posix.join(normalizedRemoteDir, base);
       const fileUri = `file://${remoteFile}`;
-      return `am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d ${escapeShellArg(fileUri)} >/dev/null 2>&1 || true`;
+      return `command -v am >/dev/null 2>&1 && am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d ${escapeShellArg(
+        fileUri
+      )} >/dev/null 2>&1 || true`;
     });
     if (scanCommands.length > 0 && scanCommands.length <= 25) {
       await runAdbShell(serial, scanCommands.join('; '), 10000);
@@ -566,7 +898,10 @@ export async function pullFromAndroid(
 
   for (const remotePath of remotePaths) {
     const normRemote = path.posix.normalize(remotePath.trim());
-    await runAdb(['-s', serial, 'pull', '-a', normRemote, resolvedLocalDir], 10 * 60 * 1000);
+    await runAdb(
+      ['-s', serial, 'pull', '-a', normRemote, resolvedLocalDir],
+      10 * 60 * 1000
+    );
   }
 }
 

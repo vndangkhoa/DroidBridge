@@ -36,7 +36,7 @@ function resolveInputPath(dirPath?: string): string {
   if (trimmed === '~') {
     return home;
   }
-  if (trimmed.startsWith('~/')) {
+  if (trimmed.startsWith('~/') || trimmed.startsWith('~\\')) {
     return path.join(home, trimmed.slice(2));
   }
   return path.resolve(trimmed);
@@ -46,7 +46,8 @@ export async function listLocalDirectory(
   dirPath?: string
 ): Promise<DirectoryListingResponse> {
   const currentPath = resolveInputPath(dirPath);
-  const parentPath = currentPath === '/' ? null : path.dirname(currentPath);
+  const parsedRoot = path.parse(currentPath).root;
+  const parentPath = currentPath === parsedRoot ? null : path.dirname(currentPath);
 
   const dirents = await fs.promises.readdir(currentPath, { withFileTypes: true });
 
@@ -105,7 +106,12 @@ export async function listLocalDirectory(
     const freeBytes = Number(statFs.bavail) * Number(statFs.bsize);
     const usedBytes = Math.max(0, totalBytes - Number(statFs.bfree) * Number(statFs.bsize));
     volume = {
-      name: 'Ubuntu Host Disk',
+      name:
+        process.platform === 'win32'
+          ? 'Windows Host Disk'
+          : process.platform === 'darwin'
+            ? 'macOS Host Disk'
+            : 'Ubuntu / Linux Host Disk',
       path: currentPath,
       totalBytes,
       usedBytes,
@@ -123,11 +129,38 @@ export async function listLocalDirectory(
     { label: 'Downloads', path: path.join(home, 'Downloads'), kind: 'folder' },
     { label: 'Documents', path: path.join(home, 'Documents'), kind: 'folder' },
     { label: 'Pictures', path: path.join(home, 'Pictures'), kind: 'folder' },
-    { label: '/tmp', path: '/tmp', kind: 'system' },
-    { label: '/media', path: '/media', kind: 'sdcard' },
-    { label: '/mnt', path: '/mnt', kind: 'sdcard' },
-    { label: 'Root (/)', path: '/', kind: 'system' },
   ];
+
+  if (process.platform === 'win32') {
+    for (let code = 67; code <= 90; code++) {
+      const letter = String.fromCharCode(code);
+      const drive = `${letter}:\\`;
+      try {
+        if (fs.existsSync(drive)) {
+          bookmarks.push({
+            label: `Local Disk (${letter}:)`,
+            path: drive,
+            kind: letter === 'C' ? 'system' : 'sdcard',
+          });
+        }
+      } catch {
+        // ignore inaccessible drive
+      }
+    }
+  } else if (process.platform === 'darwin') {
+    bookmarks.push(
+      { label: 'Volumes', path: '/Volumes', kind: 'sdcard' },
+      { label: 'Applications', path: '/Applications', kind: 'system' },
+      { label: 'Root (/)', path: '/', kind: 'system' }
+    );
+  } else {
+    bookmarks.push(
+      { label: '/tmp', path: '/tmp', kind: 'system' },
+      { label: '/media', path: '/media', kind: 'sdcard' },
+      { label: '/mnt', path: '/mnt', kind: 'sdcard' },
+      { label: 'Root (/)', path: '/', kind: 'system' }
+    );
+  }
 
   return {
     currentPath,
@@ -153,7 +186,7 @@ export async function deleteLocal(paths: string[]): Promise<void> {
   if (!paths || paths.length === 0) return;
   for (const p of paths) {
     const resolved = resolveInputPath(p);
-    if (resolved === '/' || resolved === os.homedir()) {
+    if (resolved === path.parse(resolved).root || resolved === os.homedir()) {
       throw new Error(`Refusing to delete protected path: ${resolved}`);
     }
     await fs.promises.rm(resolved, { recursive: true, force: true });

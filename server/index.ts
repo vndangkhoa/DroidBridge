@@ -28,8 +28,21 @@ import {
   mkdirLocal,
   renameLocal,
 } from './localFs';
+import {
+  connectSshDevice,
+  deleteSsh,
+  disconnectSshDevice,
+  isSshSerial,
+  listSshConfigPresets,
+  listSshDevices,
+  listSshDirectory,
+  mkdirSsh,
+  pullFromSsh,
+  pushToSsh,
+  renameSsh,
+} from './ssh';
 
-const UPLOAD_BASE_DIR = '/tmp/droidbridge-uploads';
+const UPLOAD_BASE_DIR = path.join(os.tmpdir(), 'droidbridge-uploads');
 fs.mkdirSync(UPLOAD_BASE_DIR, { recursive: true });
 
 const storage = multer.diskStorage({
@@ -88,25 +101,45 @@ app.get('/api/health', (_req: Request, res: Response) => {
   });
 });
 
-// Device management endpoints
+// Device management endpoints (ADB + Linux SSH)
 app.get('/api/devices', async (_req: Request, res: Response) => {
   try {
-    const devices = await listDevices();
-    res.json({ devices });
+    const [adbDevices, sshDevices] = await Promise.all([
+      listDevices(),
+      listSshDevices(),
+    ]);
+    res.json({ devices: [...adbDevices, ...sshDevices] });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message, devices: [] });
   }
 });
 
+app.get('/api/ssh/presets', async (_req: Request, res: Response) => {
+  const presets = await listSshConfigPresets();
+  res.json({ presets });
+});
+
 app.post('/api/devices/connect', async (req: Request, res: Response) => {
   try {
-    const { address } = req.body || {};
+    const { address, protocol, password } = req.body || {};
     if (!address || typeof address !== 'string') {
       res.status(400).json({ ok: false, error: 'Missing device address' });
       return;
     }
-    const result = await connectWirelessDevice(address);
+
+    const useSsh =
+      protocol === 'ssh' ||
+      address.trim().startsWith('ssh://') ||
+      address.includes('@');
+
+    const result = useSsh
+      ? await connectSshDevice(
+          address,
+          typeof password === 'string' ? password : undefined
+        )
+      : await connectWirelessDevice(address);
+
     res.status(result.ok ? 200 : 400).json(result);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -121,7 +154,9 @@ app.post('/api/devices/disconnect', async (req: Request, res: Response) => {
       res.status(400).json({ ok: false, error: 'Missing device address' });
       return;
     }
-    const result = await disconnectDevice(address);
+    const result = isSshSerial(address)
+      ? await disconnectSshDevice(address)
+      : await disconnectDevice(address);
     res.status(result.ok ? 200 : 400).json(result);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -203,16 +238,18 @@ app.post('/api/local/delete', async (req: Request, res: Response) => {
   }
 });
 
-// Android ADB filesystem endpoints
+// Remote Device (Android ADB + Linux ADB + Linux SSH) filesystem endpoints
 app.get('/api/android/list', async (req: Request, res: Response) => {
   try {
     const serial = typeof req.query.serial === 'string' ? req.query.serial.trim() : '';
-    const dirPath = typeof req.query.path === 'string' ? req.query.path : '/sdcard';
+    const dirPath = typeof req.query.path === 'string' ? req.query.path : undefined;
     if (!serial) {
       res.status(400).json({ error: 'Device serial query parameter is required' });
       return;
     }
-    const listing = await listAndroidDirectory(serial, dirPath);
+    const listing = isSshSerial(serial)
+      ? await listSshDirectory(serial, dirPath)
+      : await listAndroidDirectory(serial, dirPath);
     res.json(listing);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -227,7 +264,11 @@ app.post('/api/android/mkdir', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'Both serial and path are required' });
       return;
     }
-    await mkdirAndroid(String(serial), String(targetPath));
+    if (isSshSerial(String(serial))) {
+      await mkdirSsh(String(serial), String(targetPath));
+    } else {
+      await mkdirAndroid(String(serial), String(targetPath));
+    }
     res.json({ ok: true, path: targetPath });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -242,7 +283,11 @@ app.post('/api/android/rename', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'serial, oldPath, and newPath are required' });
       return;
     }
-    await renameAndroid(String(serial), String(oldPath), String(newPath));
+    if (isSshSerial(String(serial))) {
+      await renameSsh(String(serial), String(oldPath), String(newPath));
+    } else {
+      await renameAndroid(String(serial), String(oldPath), String(newPath));
+    }
     res.json({ ok: true, oldPath, newPath });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -257,7 +302,11 @@ app.post('/api/android/delete', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'serial and non-empty paths array are required' });
       return;
     }
-    await deleteAndroid(String(serial), paths.map(String));
+    if (isSshSerial(String(serial))) {
+      await deleteSsh(String(serial), paths.map(String));
+    } else {
+      await deleteAndroid(String(serial), paths.map(String));
+    }
     res.json({ ok: true, deletedCount: paths.length });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -277,7 +326,11 @@ app.get('/api/android/download', async (req: Request, res: Response) => {
   const tempDir = path.join(UPLOAD_BASE_DIR, `dl-${crypto.randomUUID()}`);
   try {
     await fs.promises.mkdir(tempDir, { recursive: true });
-    await pullFromAndroid(serial, [remotePath], tempDir);
+    if (isSshSerial(serial)) {
+      await pullFromSsh(serial, [remotePath], tempDir);
+    } else {
+      await pullFromAndroid(serial, [remotePath], tempDir);
+    }
     const basename = path.posix.basename(remotePath);
     const pulledFilePath = path.join(tempDir, basename);
 
@@ -324,7 +377,11 @@ app.post('/api/android/upload', upload.any(), async (req: Request, res: Response
   );
 
   try {
-    await pushToAndroid(serial, localTempPaths, targetDir);
+    if (isSshSerial(serial)) {
+      await pushToSsh(serial, localTempPaths, targetDir);
+    } else {
+      await pushToAndroid(serial, localTempPaths, targetDir);
+    }
     job.status = 'completed';
     job.completedAt = Date.now();
     res.json({ ok: true, job, ...job });
@@ -368,7 +425,11 @@ app.post('/api/transfer/push', async (req: Request, res: Response) => {
   );
 
   try {
-    await pushToAndroid(String(serial), cleanSources, destination);
+    if (isSshSerial(String(serial))) {
+      await pushToSsh(String(serial), cleanSources, destination);
+    } else {
+      await pushToAndroid(String(serial), cleanSources, destination);
+    }
     job.status = 'completed';
     job.completedAt = Date.now();
     res.json({ ok: true, job, ...job });
@@ -405,7 +466,11 @@ app.post('/api/transfer/pull', async (req: Request, res: Response) => {
   );
 
   try {
-    await pullFromAndroid(String(serial), cleanSources, destination);
+    if (isSshSerial(String(serial))) {
+      await pullFromSsh(String(serial), cleanSources, destination);
+    } else {
+      await pullFromAndroid(String(serial), cleanSources, destination);
+    }
     job.status = 'completed';
     job.completedAt = Date.now();
     res.json({ ok: true, job, ...job });
@@ -468,11 +533,15 @@ app.get('/api/transfer/jobs', (_req: Request, res: Response) => {
 });
 
 // Serve built frontend static assets if dist/index.html exists
-const currentDir =
-  typeof __dirname !== 'undefined'
-    ? __dirname
-    : path.dirname(fileURLToPath(import.meta.url));
-const distDir = path.resolve(currentDir, '../dist');
+const currentDir = path.resolve(process.cwd());
+const distDir = fs.existsSync(path.join(currentDir, 'dist/index.html'))
+  ? path.join(currentDir, 'dist')
+  : path.resolve(
+      typeof __dirname !== 'undefined'
+        ? __dirname
+        : path.dirname(fileURLToPath(import.meta.url)),
+      '../dist'
+    );
 const distIndexHtml = path.join(distDir, 'index.html');
 
 if (fs.existsSync(distIndexHtml)) {
@@ -506,14 +575,12 @@ export function startServer(port?: number): Promise<Server> {
   });
 }
 
-const isMainModule =
-  typeof require !== 'undefined' && typeof module !== 'undefined'
-    ? require.main === module
-    : Boolean(process.argv[1]) && import.meta?.url
-      ? import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
-      : false;
+const isExecutedDirectly =
+  Boolean(process.argv[1]) &&
+  (process.argv[1].endsWith('server/index.ts') ||
+    process.argv[1].endsWith('dist-server/index.cjs'));
 
-if (isMainModule) {
+if (isExecutedDirectly) {
   startServer().catch((err) => {
     console.error('[DroidBridge Server] Failed to start:', err);
     process.exit(1);

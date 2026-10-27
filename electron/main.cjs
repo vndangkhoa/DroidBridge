@@ -4,8 +4,10 @@ const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
 
-// Ensure compatibility on Ubuntu systems where unprivileged user namespaces may be restricted
-app.commandLine.appendSwitch('no-sandbox');
+// Ensure compatibility on Linux systems where unprivileged user namespaces may be restricted
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('no-sandbox');
+}
 
 const PORT = Number(process.env.PORT || 3456);
 const HEALTH_URL = `http://127.0.0.1:${PORT}/api/health`;
@@ -141,7 +143,7 @@ async function createMainWindow() {
     minWidth: 960,
     minHeight: 640,
     backgroundColor: '#0d1014',
-    title: 'DroidBridge — Ubuntu ↔ Android File Manager',
+    title: 'DroidBridge — Cross-Platform Android & Handheld File Manager',
     icon: path.join(PROJECT_ROOT, 'public/icon.png'),
     autoHideMenuBar: true,
     webPreferences: {

@@ -14,7 +14,10 @@
     "start": "NODE_ENV=production tsx server/index.ts",
     "desktop": "npm run build && electron .",
     "desktop:dev": "electron .",
-    "dist": "npm run build && electron-builder --linux deb AppImage"
+    "dist": "npm run build && electron-builder --linux deb AppImage",
+    "dist:linux": "npm run build && electron-builder --linux deb AppImage",
+    "dist:win": "npm run build && electron-builder --win nsis portable",
+    "dist:mac": "npm run build && electron-builder --mac zip"
   },
   "build": {
     "appId": "com.droidbridge.app",
@@ -62,6 +65,44 @@
     "deb": {
       "recommends": [
         "adb"
+      ]
+    },
+    "win": {
+      "icon": "public/icon.png",
+      "executableName": "DroidBridge",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "mac": {
+      "icon": "public/icon.png",
+      "category": "public.app-category.utilities",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ]
     }
   },

@@ -7,6 +7,7 @@ import {
   PackagePlus,
   Pencil,
   RefreshCw,
+  Terminal,
   Wifi,
   X,
 } from 'lucide-react';
@@ -105,9 +106,23 @@ export const WifiAdbModal: React.FC<WifiAdbModalProps> = ({
   onClose,
   onConnected,
 }) => {
-  const [address, setAddress] = useState('192.168.1.100:5555');
+  const [protocol, setProtocol] = useState<'adb' | 'ssh'>('adb');
+  const [address, setAddress] = useState('192.168.31.100:5555');
+  const [password, setPassword] = useState('');
+  const [sshPresets, setSshPresets] = useState<
+    { alias: string; hostName?: string; user?: string; port?: string }[]
+  >([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      api
+        .listSshPresets()
+        .then(setSshPresets)
+        .catch(() => {});
+    }
+  }, [open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,11 +130,19 @@ export const WifiAdbModal: React.FC<WifiAdbModalProps> = ({
     setBusy(true);
     setError(null);
     try {
-      const res = await api.connectWifiDevice(address.trim());
+      const res = await api.connectWifiDevice(address.trim(), {
+        protocol,
+        password: password || undefined,
+      });
       onConnected(res.message || res.output || `Connected to ${address.trim()}`);
       onClose();
     } catch (err: any) {
-      setError(err?.message || 'Failed to connect over Wireless ADB');
+      setError(
+        err?.message ||
+          (protocol === 'ssh'
+            ? 'Failed to connect to Linux SSH host'
+            : 'Failed to connect over Wireless ADB')
+      );
     } finally {
       setBusy(false);
     }
@@ -129,16 +152,88 @@ export const WifiAdbModal: React.FC<WifiAdbModalProps> = ({
     <LightDismissDialog
       open={open}
       onClose={onClose}
-      title="Connect Wireless ADB"
-      icon={<Wifi size={16} color="var(--accent-bridge)" />}
+      title="Connect Wireless ADB or Linux SSH"
+      icon={
+        protocol === 'ssh' ? (
+          <Terminal size={16} color="var(--accent-bridge)" />
+        ) : (
+          <Wifi size={16} color="var(--accent-bridge)" />
+        )
+      }
     >
       <form onSubmit={handleSubmit}>
         <div className="dialog-body">
-          <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 12 }}>
-            Enter your Android device or handheld IP address and ADB port (default{' '}
-            <code className="mono-num">5555</code>). Ensure Wireless Debugging or ADB over
-            Network is enabled on the device.
-          </p>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              className={`btn ${protocol === 'adb' ? 'btn-bridge' : ''}`}
+              style={{ flex: 1, justifyContent: 'center' }}
+              onClick={() => {
+                setProtocol('adb');
+                setError(null);
+                if (address.includes('@') || !address.includes(':')) {
+                  setAddress('192.168.31.100:5555');
+                }
+              }}
+            >
+              <Wifi size={13} />
+              <span>Wi-Fi ADB (Android / Handheld)</span>
+            </button>
+            <button
+              type="button"
+              className={`btn ${protocol === 'ssh' ? 'btn-bridge' : ''}`}
+              style={{ flex: 1, justifyContent: 'center' }}
+              onClick={() => {
+                setProtocol('ssh');
+                setError(null);
+                if (address.endsWith(':5555')) {
+                  setAddress('root@192.168.31.100:22');
+                }
+              }}
+            >
+              <Terminal size={13} />
+              <span>Linux SSH / SFTP</span>
+            </button>
+          </div>
+
+          {protocol === 'adb' ? (
+            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 12 }}>
+              Enter your Android device or TrimUI handheld IP address and ADB port
+              (default <code className="mono-num">5555</code>).
+            </p>
+          ) : (
+            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 12 }}>
+              Connect to any Linux handheld, Raspberry Pi, NAS, or server via SSH (
+              <code className="mono-num">user@host:port</code> or{' '}
+              <code className="mono-num">~/.ssh/config</code> host alias).
+            </p>
+          )}
+
+          {protocol === 'ssh' && sshPresets.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>
+                SSH Config Presets:
+              </span>
+              {sshPresets.map((p) => (
+                <button
+                  key={p.alias}
+                  type="button"
+                  className="btn btn-xs"
+                  onClick={() => setAddress(p.alias)}
+                  title={`${p.user ? `${p.user}@` : ''}${p.hostName || p.alias}${
+                    p.port ? `:${p.port}` : ''
+                  }`}
+                >
+                  <Terminal size={11} />
+                  <span>
+                    {p.alias}
+                    {p.hostName ? ` (${p.hostName}${p.port ? `:${p.port}` : ''})` : ''}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <label
             style={{
               display: 'flex',
@@ -148,17 +243,45 @@ export const WifiAdbModal: React.FC<WifiAdbModalProps> = ({
               fontWeight: 600,
             }}
           >
-            <span>Device IP : Port</span>
+            <span>
+              {protocol === 'ssh'
+                ? 'SSH Target (user@host:port or alias)'
+                : 'Device IP : Port'}
+            </span>
             <input
               type="text"
               className="text-input mono"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="192.168.1.50:5555"
+              placeholder={
+                protocol === 'ssh' ? 'root@192.168.31.88:22 or trimui' : '192.168.31.50:5555'
+              }
               required
               autoFocus
             />
           </label>
+
+          {protocol === 'ssh' && (
+            <label
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 5,
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              <span>SSH Password (optional — leave blank for SSH key)</span>
+              <input
+                type="password"
+                className="text-input mono"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="•••••••• (optional)"
+              />
+            </label>
+          )}
+
           {error && (
             <div
               style={{
@@ -178,8 +301,14 @@ export const WifiAdbModal: React.FC<WifiAdbModalProps> = ({
             Cancel
           </button>
           <button type="submit" className="btn btn-bridge" disabled={busy}>
-            {busy ? <Loader2 size={14} className="spin" /> : <Wifi size={14} />}
-            <span>Connect Device</span>
+            {busy ? (
+              <Loader2 size={14} className="spin" />
+            ) : protocol === 'ssh' ? (
+              <Terminal size={14} />
+            ) : (
+              <Wifi size={14} />
+            )}
+            <span>{protocol === 'ssh' ? 'Connect SSH' : 'Connect ADB'}</span>
           </button>
         </div>
       </form>

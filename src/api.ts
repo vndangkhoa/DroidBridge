@@ -53,12 +53,26 @@ export const api = {
     return data.devices ?? [];
   },
 
+  async listSshPresets(): Promise<
+    { alias: string; hostName?: string; user?: string; port?: string }[]
+  > {
+    const data = await requestJson<{
+      presets: { alias: string; hostName?: string; user?: string; port?: string }[];
+    }>('/api/ssh/presets');
+    return data.presets ?? [];
+  },
+
   async connectWifiDevice(
-    address: string
-  ): Promise<{ ok?: boolean; message?: string; output?: string }> {
+    address: string,
+    options?: { protocol?: 'adb' | 'ssh'; password?: string }
+  ): Promise<{ ok?: boolean; message?: string; output?: string; serial?: string }> {
     return requestJson('/api/devices/connect', {
       method: 'POST',
-      body: JSON.stringify({ address: address.trim() }),
+      body: JSON.stringify({
+        address: address.trim(),
+        protocol: options?.protocol,
+        password: options?.password,
+      }),
     });
   },
 
@@ -245,8 +259,37 @@ export function formatTimestamp(unixSeconds: number | undefined | null): string 
   return `${y}-${m}-${d} ${hh}:${mm}`;
 }
 
+export function isWindowsPath(p: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(p) || /^[A-Za-z]:$/.test(p) || p.includes('\\');
+}
+
 export function joinPosixPath(dir: string, name: string): string {
   const cleanDir = dir.endsWith('/') && dir.length > 1 ? dir.slice(0, -1) : dir;
   const cleanName = name.replace(/^\/+/, '');
   return cleanDir === '/' ? `/${cleanName}` : `${cleanDir}/${cleanName}`;
+}
+
+export function joinPath(basePath: string, name: string): string {
+  if (isWindowsPath(basePath)) {
+    const cleanBase = basePath.replace(/[\\/]+$/, '');
+    const cleanName = name.replace(/^[\\/]+/, '');
+    return `${cleanBase}\\${cleanName}`;
+  }
+  return joinPosixPath(basePath, name);
+}
+
+export function getParentPath(filePath: string, fallbackDir = '/'): string {
+  if (isWindowsPath(filePath)) {
+    const clean = filePath.replace(/[\\/]+$/, '');
+    const lastSep = Math.max(clean.lastIndexOf('\\'), clean.lastIndexOf('/'));
+    if (lastSep < 0) return fallbackDir;
+    const parent = clean.substring(0, lastSep);
+    if (/^[A-Za-z]:$/.test(parent)) {
+      return `${parent}\\`;
+    }
+    return parent || fallbackDir;
+  }
+  const lastSep = filePath.lastIndexOf('/');
+  if (lastSep <= 0) return '/';
+  return filePath.substring(0, lastSep);
 }
