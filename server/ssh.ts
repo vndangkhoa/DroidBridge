@@ -74,20 +74,26 @@ function getSshTarget(serial: string): SshConnectionTarget {
 }
 
 function buildSshBaseArgs(target: SshConnectionTarget, isScp = false): string[] {
+  const isWin = process.platform === 'win32';
   const args: string[] = [
     '-o',
     'StrictHostKeyChecking=no',
     '-o',
-    'UserKnownHostsFile=/dev/null',
+    `UserKnownHostsFile=${isWin ? 'NUL' : '/dev/null'}`,
     '-o',
     'ConnectTimeout=6',
-    '-o',
-    'ControlMaster=auto',
-    '-o',
-    'ControlPath=/tmp/droidbridge-ssh-%C',
-    '-o',
-    'ControlPersist=10m',
   ];
+
+  if (!isWin) {
+    args.push(
+      '-o',
+      'ControlMaster=auto',
+      '-o',
+      `ControlPath=${path.join(os.tmpdir(), 'droidbridge-ssh-%C')}`,
+      '-o',
+      'ControlPersist=10m'
+    );
+  }
 
   if (!target.password) {
     args.push('-o', 'BatchMode=yes');
@@ -110,23 +116,42 @@ async function execWithOptionalPassword(
     const { stdout, stderr } = await execFileAsync(binary, args, {
       maxBuffer: MAX_BUFFER,
       timeout: timeoutMs,
+      windowsHide: true,
     });
     return { stdout: stdout.toString(), stderr: stderr.toString() };
   }
 
   // Create temporary SSH_ASKPASS script for password authentication
-  const askpassPath = `/tmp/droidbridge-askpass-${crypto.randomUUID()}.sh`;
-  const escapedPw = password.replace(/'/g, `'\\''`);
-  await fs.promises.writeFile(
-    askpassPath,
-    `#!/bin/sh\necho '${escapedPw}'\n`,
-    { mode: 0o700 }
+  const isWin = process.platform === 'win32';
+  const askpassPath = path.join(
+    os.tmpdir(),
+    `droidbridge-askpass-${crypto.randomUUID()}.${isWin ? 'cmd' : 'sh'}`
   );
+
+  if (isWin) {
+    const escapedWinPw = password
+      .replace(/\^/g, '^^')
+      .replace(/%/g, '%%')
+      .replace(/[&|<>()]/g, '^$&');
+    await fs.promises.writeFile(
+      askpassPath,
+      `@echo off\r\necho ${escapedWinPw}\r\n`,
+      { encoding: 'utf8' }
+    );
+  } else {
+    const escapedPw = password.replace(/'/g, `'\\''`);
+    await fs.promises.writeFile(
+      askpassPath,
+      `#!/bin/sh\necho '${escapedPw}'\n`,
+      { mode: 0o700 }
+    );
+  }
 
   try {
     const { stdout, stderr } = await execFileAsync(binary, args, {
       maxBuffer: MAX_BUFFER,
       timeout: timeoutMs,
+      windowsHide: true,
       env: {
         ...process.env,
         DISPLAY: process.env.DISPLAY || ':0',
@@ -200,18 +225,24 @@ export async function disconnectSshDevice(
   const target = activeSshTargets.get(serial) || parseSshAddress(serial);
   activeSshTargets.delete(target.serial);
 
-  const destination = target.user ? `${target.user}@${target.host}` : target.host;
-  try {
-    await execFileAsync('ssh', [
-      '-O',
-      'exit',
-      '-o',
-      'ControlPath=/tmp/droidbridge-ssh-%C',
-      ...(target.port ? ['-p', String(target.port)] : []),
-      destination,
-    ]);
-  } catch {
-    // ignore if socket already closed
+  if (process.platform !== 'win32') {
+    const destination = target.user ? `${target.user}@${target.host}` : target.host;
+    try {
+      await execFileAsync(
+        'ssh',
+        [
+          '-O',
+          'exit',
+          '-o',
+          `ControlPath=${path.join(os.tmpdir(), 'droidbridge-ssh-%C')}`,
+          ...(target.port ? ['-p', String(target.port)] : []),
+          destination,
+        ],
+        { windowsHide: true }
+      );
+    } catch {
+      // ignore if socket already closed
+    }
   }
 
   return {

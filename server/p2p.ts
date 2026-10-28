@@ -85,10 +85,11 @@ export function getLanAddresses(): {
     for (const addr of addrs) {
       if (addr.family === 'IPv4' && !addr.internal) {
         const isP2pOrHotspot =
-          /^(wlan|wlp|p2p|ap|wlx|uap)/i.test(iface) ||
+          /^(wlan|wlp|p2p|ap|wlx|uap|wi-fi|wireless|local area connection\*)/i.test(iface) ||
           addr.address.startsWith('10.42.0.') ||
           addr.address.startsWith('192.168.43.') ||
-          addr.address.startsWith('192.168.49.');
+          addr.address.startsWith('192.168.49.') ||
+          addr.address.startsWith('192.168.137.');
         list.push({
           ip: addr.address,
           iface,
@@ -346,11 +347,13 @@ function probeTcpPort(ip: string, port: number, timeoutMs = 450): Promise<boolea
 }
 
 /**
- * Discovers peers on the local Wi-Fi / P2P Hotspot using ARP table, ip neigh, mDNS (avahi-browse), and fast TCP port probes (5555 ADB, 22 SSH)
+ * Discovers peers on the local Wi-Fi / P2P Hotspot using ARP table, ip neigh, mDNS (avahi-browse),
+ * active /24 subnet sweep on port 5555, and fast TCP port probes (5555 ADB, 22 SSH)
  */
 export async function discoverP2pPeers(): Promise<P2pDiscoveredPeer[]> {
   const peerMap = new Map<string, P2pDiscoveredPeer>();
-  const ownIps = new Set(getLanAddresses().map((a) => a.ip));
+  const lanAddresses = getLanAddresses();
+  const ownIps = new Set(lanAddresses.map((a) => a.ip));
   ownIps.add('127.0.0.1');
 
   const upsertPeer = (
@@ -358,7 +361,14 @@ export async function discoverP2pPeers(): Promise<P2pDiscoveredPeer[]> {
     patch: Partial<P2pDiscoveredPeer> & { addServices?: ('adb' | 'ssh' | 'http' | 'lan')[] }
   ) => {
     if (!/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return;
-    if (ownIps.has(ip) || ip.endsWith('.255') || ip.startsWith('224.') || ip.startsWith('239.')) {
+    if (
+      ownIps.has(ip) ||
+      ip.endsWith('.255') ||
+      ip.endsWith('.0') ||
+      ip.startsWith('224.') ||
+      ip.startsWith('239.') ||
+      ip.startsWith('255.')
+    ) {
       return;
     }
 
@@ -366,7 +376,8 @@ export async function discoverP2pPeers(): Promise<P2pDiscoveredPeer[]> {
       ip.startsWith('10.42.0.') ||
       ip.startsWith('192.168.43.') ||
       ip.startsWith('192.168.49.') ||
-      (patch.iface ? /^(p2p|ap)/i.test(patch.iface) : false);
+      ip.startsWith('192.168.137.') ||
+      (patch.iface ? /^(p2p|ap|local area connection\*)/i.test(patch.iface) : false);
 
     const existing = peerMap.get(ip) || {
       ip,
@@ -396,99 +407,199 @@ export async function discoverP2pPeers(): Promise<P2pDiscoveredPeer[]> {
     peerMap.set(ip, existing);
   };
 
-  // 1. Read /proc/net/arp on Linux
-  try {
-    if (fs.existsSync('/proc/net/arp')) {
+  // 1. Read /proc/net/arp on Linux, or `arp -a` on Windows / macOS / fallback
+  let procArpLoaded = false;
+  if (process.platform === 'linux' && fs.existsSync('/proc/net/arp')) {
+    try {
       const arpRaw = await fs.promises.readFile('/proc/net/arp', 'utf8');
       for (const line of arpRaw.split('\n').slice(1)) {
         const parts = line.trim().split(/\s+/);
         if (parts.length >= 6) {
           const [ip, , flags, mac, , iface] = parts;
-          if (flags === '0x0' || mac === '00:00:00:00:00:00') continue;
+          if (
+            flags === '0x0' ||
+            mac === '00:00:00:00:00:00' ||
+            mac.toLowerCase() === 'ff:ff:ff:ff:ff:ff'
+          ) {
+            continue;
+          }
           if (/^(docker|veth|br-|virbr)/i.test(iface)) continue;
-          upsertPeer(ip, { mac, iface, source: 'arp', addServices: ['lan'] });
+          upsertPeer(ip, { mac: mac.toLowerCase(), iface, source: 'arp', addServices: ['lan'] });
         }
       }
+      procArpLoaded = true;
+    } catch {
+      // fallback to arp -a below
     }
-  } catch {
-    // ignore
   }
 
-  // 2. Read `ip neigh show` for up-to-date neighbor entries
-  try {
-    const { stdout: neighOut } = await execFileAsync('ip', ['neigh', 'show'], {
-      timeout: 2500,
-    });
-    for (const line of neighOut.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.includes('FAILED') || trimmed.includes('INCOMPLETE')) continue;
-      const ipMatch = trimmed.match(/^(\d+\.\d+\.\d+\.\d+)\s+/);
-      if (!ipMatch) continue;
-      const ip = ipMatch[1];
-      const devMatch = trimmed.match(/\bdev\s+(\S+)/);
-      const macMatch = trimmed.match(/\blladdr\s+([0-9a-fA-F:]{17})/);
-      const iface = devMatch ? devMatch[1] : undefined;
-      if (iface && /^(docker|veth|br-|virbr)/i.test(iface)) continue;
-      upsertPeer(ip, {
-        iface,
-        mac: macMatch ? macMatch[1] : undefined,
-        source: 'arp',
-        addServices: ['lan'],
+  if (!procArpLoaded || process.platform === 'win32' || process.platform === 'darwin') {
+    try {
+      const { stdout: arpOut } = await execFileAsync('arp', ['-a'], {
+        timeout: 3000,
+        windowsHide: true,
       });
+      for (const rawLine of arpOut.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line) continue;
+
+        // Windows format: "  192.168.1.50          aa-bb-cc-dd-ee-ff     dynamic"
+        const winMatch = line.match(
+          /^(\d+\.\d+\.\d+\.\d+)\s+([0-9a-fA-F]{2}(?:[:-][0-9a-fA-F]{2}){5})\s+(\S+)/
+        );
+        if (winMatch) {
+          const ip = winMatch[1];
+          const mac = winMatch[2].replace(/-/g, ':').toLowerCase();
+          if (mac === 'ff:ff:ff:ff:ff:ff' || mac === '00:00:00:00:00:00') continue;
+          upsertPeer(ip, { mac, source: 'arp', addServices: ['lan'] });
+          continue;
+        }
+
+        // macOS / BSD / Linux `arp -a` format: "? (192.168.1.50) at aa:bb:cc:dd:ee:ff [ether] on en0"
+        const bsdMatch = line.match(
+          /\((\d+\.\d+\.\d+\.\d+)\)\s+at\s+([0-9a-fA-F]{1,2}(?:[:-][0-9a-fA-F]{1,2}){5})/
+        );
+        if (bsdMatch) {
+          const ip = bsdMatch[1];
+          const mac = bsdMatch[2]
+            .replace(/-/g, ':')
+            .split(':')
+            .map((part) => part.padStart(2, '0').toLowerCase())
+            .join(':');
+          if (mac === 'ff:ff:ff:ff:ff:ff' || mac === '00:00:00:00:00:00') continue;
+          const ifaceMatch = line.match(/\bon\s+(\S+)/);
+          upsertPeer(ip, {
+            mac,
+            iface: ifaceMatch ? ifaceMatch[1] : undefined,
+            source: 'arp',
+            addServices: ['lan'],
+          });
+        }
+      }
+    } catch {
+      // ignore if arp is unavailable
     }
-  } catch {
-    // ignore
   }
 
-  // 3. Optional fast mDNS browse via avahi-browse
-  try {
-    const { stdout: mdnsOut } = await execFileAsync(
-      'avahi-browse',
-      ['-artp', '-t'],
-      { timeout: 2500 }
-    );
-    for (const line of mdnsOut.split('\n')) {
-      if (!line.startsWith('=')) continue;
-      const cols = line.split(';');
-      // Format: =;iface;protocol;name;type;domain;hostname;address;port;txt
-      if (cols.length < 9) continue;
-      const [, iface, , serviceName, serviceType, , hostname, address, portStr] = cols;
-      if (!/^\d+\.\d+\.\d+\.\d+$/.test(address)) continue;
-      const portNum = Number.parseInt(portStr, 10);
+  // 2. Read `ip neigh show` for up-to-date neighbor entries on Linux
+  if (process.platform === 'linux') {
+    try {
+      const { stdout: neighOut } = await execFileAsync('ip', ['neigh', 'show'], {
+        timeout: 2500,
+      });
+      for (const line of neighOut.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.includes('FAILED') || trimmed.includes('INCOMPLETE')) continue;
+        const ipMatch = trimmed.match(/^(\d+\.\d+\.\d+\.\d+)\s+/);
+        if (!ipMatch) continue;
+        const ip = ipMatch[1];
+        const devMatch = trimmed.match(/\bdev\s+(\S+)/);
+        const macMatch = trimmed.match(/\blladdr\s+([0-9a-fA-F:]{17})/);
+        const iface = devMatch ? devMatch[1] : undefined;
+        if (iface && /^(docker|veth|br-|virbr)/i.test(iface)) continue;
+        upsertPeer(ip, {
+          iface,
+          mac: macMatch ? macMatch[1].toLowerCase() : undefined,
+          source: 'arp',
+          addServices: ['lan'],
+        });
+      }
+    } catch {
+      // ignore
+    }
 
-      const addServices: ('adb' | 'ssh' | 'http' | 'lan')[] = ['lan'];
-      let adbPort: number | undefined;
-      let sshPort: number | undefined;
+    // 3. Optional fast mDNS browse via avahi-browse on Linux
+    try {
+      const { stdout: mdnsOut } = await execFileAsync(
+        'avahi-browse',
+        ['-artp', '-t'],
+        { timeout: 2500 }
+      );
+      for (const line of mdnsOut.split('\n')) {
+        if (!line.startsWith('=')) continue;
+        const cols = line.split(';');
+        // Format: =;iface;protocol;name;type;domain;hostname;address;port;txt
+        if (cols.length < 9) continue;
+        const [, iface, , serviceName, serviceType, , hostname, address, portStr] = cols;
+        if (!/^\d+\.\d+\.\d+\.\d+$/.test(address)) continue;
+        const portNum = Number.parseInt(portStr, 10);
 
-      if (serviceType.includes('_adb')) {
-        addServices.push('adb');
-        if (!Number.isNaN(portNum) && portNum > 0) adbPort = portNum;
-      } else if (serviceType.includes('_ssh') || serviceType.includes('_sftp-ssh')) {
-        addServices.push('ssh');
-        if (!Number.isNaN(portNum) && portNum > 0) sshPort = portNum;
-      } else if (serviceType.includes('_http')) {
-        addServices.push('http');
+        const addServices: ('adb' | 'ssh' | 'http' | 'lan')[] = ['lan'];
+        let adbPort: number | undefined;
+        let sshPort: number | undefined;
+
+        if (serviceType.includes('_adb')) {
+          addServices.push('adb');
+          if (!Number.isNaN(portNum) && portNum > 0) adbPort = portNum;
+        } else if (serviceType.includes('_ssh') || serviceType.includes('_sftp-ssh')) {
+          addServices.push('ssh');
+          if (!Number.isNaN(portNum) && portNum > 0) sshPort = portNum;
+        } else if (serviceType.includes('_http')) {
+          addServices.push('http');
+        }
+
+        upsertPeer(address, {
+          iface,
+          hostname: (hostname || serviceName || '').replace(/\.local\.?$/, ''),
+          adbPort,
+          sshPort,
+          source: 'mdns',
+          addServices,
+        });
+      }
+    } catch {
+      // avahi-browse may not be installed or may time out; safe to ignore
+    }
+  }
+
+  // 4. Active /24 subnet sweep on primary local IPv4 interface for port 5555 (Wireless ADB)
+  // Finds devices (e.g. TrimUI Smart Pro S) on the same Wi-Fi that haven't entered the ARP cache yet
+  const primaryLan = lanAddresses[0];
+  if (primaryLan) {
+    const octets = primaryLan.ip.split('.');
+    if (octets.length === 4) {
+      const prefix = `${octets[0]}.${octets[1]}.${octets[2]}`;
+      const subnetIps: string[] = [];
+      for (let host = 1; host <= 254; host++) {
+        const candidateIp = `${prefix}.${host}`;
+        if (!ownIps.has(candidateIp)) {
+          subnetIps.push(candidateIp);
+        }
       }
 
-      upsertPeer(address, {
-        iface,
-        hostname: (hostname || serviceName || '').replace(/\.local\.?$/, ''),
-        adbPort,
-        sshPort,
-        source: 'mdns',
-        addServices,
-      });
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < subnetIps.length; i += BATCH_SIZE) {
+        const batch = subnetIps.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (candidateIp) => {
+            const adbOpen = await probeTcpPort(candidateIp, 5555, 350);
+            if (adbOpen) {
+              upsertPeer(candidateIp, {
+                iface: primaryLan.iface,
+                adbPort: 5555,
+                source: 'arp',
+                addServices: ['lan', 'adb'],
+              });
+            }
+          })
+        );
+      }
     }
-  } catch {
-    // avahi-browse may not be installed or may time out; safe to ignore
   }
 
-  // 4. Probe TCP ports 5555 (ADB) and 22 (SSH) on discovered peers in parallel
-  const peers = Array.from(peerMap.values()).slice(0, 32);
+  // 5. Probe TCP ports 5555 (ADB) and 22 (SSH) on all candidate peers in parallel
+  const allCandidates = Array.from(peerMap.values()).sort((a, b) => {
+    const aHasSvc = a.services.includes('adb') || a.services.includes('ssh') ? 1 : 0;
+    const bHasSvc = b.services.includes('adb') || b.services.includes('ssh') ? 1 : 0;
+    return bHasSvc - aHasSvc;
+  });
+  const peers = allCandidates.slice(0, 32);
   await Promise.all(
     peers.map(async (peer) => {
       const [adbOpen, sshOpen] = await Promise.all([
-        probeTcpPort(peer.ip, peer.adbPort || 5555, 450),
+        peer.services.includes('adb')
+          ? Promise.resolve(true)
+          : probeTcpPort(peer.ip, peer.adbPort || 5555, 450),
         probeTcpPort(peer.ip, peer.sshPort || 22, 450),
       ]);
       if (adbOpen) {

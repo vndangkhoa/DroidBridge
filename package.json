@@ -71,6 +71,15 @@
     "win": {
       "icon": "public/icon.png",
       "executableName": "DroidBridge",
+      "extraResources": [
+        {
+          "from": "resources/bin/win32",
+          "to": "bin/win32",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
       "target": [
         {
           "target": "zip",

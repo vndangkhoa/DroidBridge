@@ -1,4 +1,5 @@
 import type {
+  AdbDiagnostics,
   AndroidDevice,
   DirectoryListingResponse,
   P2pDiscoveredPeer,
@@ -55,8 +56,36 @@ export const api = {
   },
 
   async listDevices(): Promise<AndroidDevice[]> {
-    const data = await requestJson<{ devices: AndroidDevice[] }>('/api/devices');
+    const data = await requestJson<{
+      devices: AndroidDevice[];
+      diagnostics?: AdbDiagnostics;
+    }>('/api/devices');
     return data.devices ?? [];
+  },
+
+  async listDevicesWithDiagnostics(): Promise<{
+    devices: AndroidDevice[];
+    diagnostics?: AdbDiagnostics;
+  }> {
+    const data = await requestJson<{
+      devices: AndroidDevice[];
+      diagnostics?: AdbDiagnostics;
+    }>('/api/devices');
+    return {
+      devices: data.devices ?? [],
+      diagnostics: data.diagnostics,
+    };
+  },
+
+  async autoDiscoverDevices(): Promise<{
+    ok: boolean;
+    connected: string[];
+    peers: P2pDiscoveredPeer[];
+    devices: AndroidDevice[];
+  }> {
+    return requestJson('/api/devices/auto-discover', {
+      method: 'POST',
+    });
   },
 
   async listSshPresets(): Promise<

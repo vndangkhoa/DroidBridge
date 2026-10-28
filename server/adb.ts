@@ -5,15 +5,64 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type {
+  AdbDiagnostics,
   AndroidDevice,
   DirectoryListingResponse,
   FileEntry,
   StorageVolume,
+  WindowsUsbDeviceDiagnostic,
 } from '../src/types';
+
+export type { AdbDiagnostics, WindowsUsbDeviceDiagnostic };
 
 const execFileAsync = promisify(execFile);
 
 const MAX_BUFFER = 50 * 1024 * 1024; // 50 MB
+
+const REQUIRED_ADB_VENDOR_IDS = ['0x1f3a', '0x18d1', '0x2207', '0x1d6b'];
+let usbVendorIdsSeeded = false;
+let lastAdbError: string | undefined;
+
+export function ensureAdbUsbVendorIds(): void {
+  if (usbVendorIdsSeeded) return;
+  usbVendorIdsSeeded = true;
+  try {
+    const androidDir = path.join(os.homedir(), '.android');
+    const iniPath = path.join(androidDir, 'adb_usb.ini');
+    fs.mkdirSync(androidDir, { recursive: true });
+
+    let existingContent = '';
+    if (fs.existsSync(iniPath)) {
+      existingContent = fs.readFileSync(iniPath, 'utf-8');
+    }
+
+    const existingLines = new Set(
+      existingContent
+        .split(/\r?\n/)
+        .map((line) => line.trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    const missingIds = REQUIRED_ADB_VENDOR_IDS.filter(
+      (id) => !existingLines.has(id.toLowerCase())
+    );
+
+    if (missingIds.length > 0) {
+      const prefix =
+        existingContent.length > 0 && !existingContent.endsWith('\n')
+          ? '\n'
+          : '';
+      const header =
+        existingContent.length === 0
+          ? '# ANDROID 3RD PARTY USB VENDOR ID LIST -- MANAGED BY DROIDBRIDGE\n'
+          : '';
+      const addition = `${prefix}${header}${missingIds.join('\n')}\n`;
+      fs.appendFileSync(iniPath, addition, 'utf-8');
+    }
+  } catch {
+    // Ignore filesystem errors on restricted environments
+  }
+}
 
 export function resolveAdbBinary(): string {
   if (process.env.ADB_PATH && fs.existsSync(process.env.ADB_PATH)) {
@@ -21,6 +70,12 @@ export function resolveAdbBinary(): string {
   }
 
   const home = os.homedir();
+  const localAppData =
+    process.env.LOCALAPPDATA || path.join(home, 'AppData/Local');
+  const resourcesPath = (
+    process as NodeJS.Process & { resourcesPath?: string }
+  ).resourcesPath;
+
   const candidates: string[] =
     process.platform === 'darwin'
       ? [
@@ -30,12 +85,19 @@ export function resolveAdbBinary(): string {
         ]
       : process.platform === 'win32'
         ? [
-            path.join(
-              process.env.LOCALAPPDATA || path.join(home, 'AppData/Local'),
-              'Android/Sdk/platform-tools/adb.exe'
-            ),
+            resourcesPath ? path.join(resourcesPath, 'bin/win32/adb.exe') : '',
+            path.resolve(process.cwd(), 'resources/bin/win32/adb.exe'),
+            path.resolve(__dirname, '../resources/bin/win32/adb.exe'),
+            path.resolve(__dirname, '../../resources/bin/win32/adb.exe'),
+            path.join(localAppData, 'Android/Sdk/platform-tools/adb.exe'),
             'C:\\platform-tools\\adb.exe',
             'C:\\Android\\platform-tools\\adb.exe',
+            'C:\\Program Files (x86)\\Android\\android-sdk\\platform-tools\\adb.exe',
+            'C:\\Program Files\\Android\\android-sdk\\platform-tools\\adb.exe',
+            path.join(localAppData, 'Microsoft/WinGet/Links/adb.exe'),
+            path.join(home, 'scoop/apps/adb/current/adb.exe'),
+            path.join(home, 'scoop/shims/adb.exe'),
+            'C:\\ProgramData\\chocolatey\\bin\\adb.exe',
           ]
         : [
             '/usr/bin/adb',
@@ -44,6 +106,7 @@ export function resolveAdbBinary(): string {
           ];
 
   for (const candidate of candidates) {
+    if (!candidate) continue;
     try {
       if (fs.existsSync(candidate)) {
         return candidate;
@@ -64,6 +127,7 @@ async function runAdb(
   args: string[],
   timeoutMs = 30000
 ): Promise<{ stdout: string; stderr: string }> {
+  ensureAdbUsbVendorIds();
   const { stdout, stderr } = await execFileAsync(resolveAdbBinary(), args, {
     maxBuffer: MAX_BUFFER,
     timeout: timeoutMs,
@@ -225,7 +289,9 @@ export async function listDevices(): Promise<AndroidDevice[]> {
   try {
     const res = await runAdb(['devices', '-l'], 10000);
     stdout = res.stdout;
-  } catch {
+    lastAdbError = undefined;
+  } catch (err: unknown) {
+    lastAdbError = err instanceof Error ? err.message : String(err);
     return [];
   }
 
@@ -388,6 +454,109 @@ export async function listDevices(): Promise<AndroidDevice[]> {
   }
 
   return devices;
+}
+
+export async function getAdbDiagnostics(
+  connectedCount = 0
+): Promise<AdbDiagnostics> {
+  const adbBinaryPath = resolveAdbBinary();
+  let adbAvailable = false;
+
+  if (path.isAbsolute(adbBinaryPath) && fs.existsSync(adbBinaryPath)) {
+    adbAvailable = !lastAdbError || !/ENOENT|not found|not recognized/i.test(lastAdbError);
+  } else if (!lastAdbError) {
+    try {
+      await execFileAsync(adbBinaryPath, ['version'], {
+        timeout: 3000,
+        windowsHide: true,
+      });
+      adbAvailable = true;
+    } catch (err: unknown) {
+      adbAvailable = false;
+      lastAdbError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  let windowsUsbDevices: WindowsUsbDeviceDiagnostic[] | undefined;
+  let usbHint: string | undefined;
+
+  if (process.platform === 'win32' && connectedCount === 0) {
+    try {
+      const psCmd =
+        "Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match 'VID_1F3A|VID_18D1|VID_2207' -or $_.FriendlyName -match 'TrimUI|Smart Pro|ADB|Android|MTP' } | Select-Object FriendlyName,InstanceId,Status,Class,ConfigManagerErrorCode | ConvertTo-Json -Compress";
+      const { stdout } = await execFileAsync(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', psCmd],
+        {
+          timeout: 4000,
+          windowsHide: true,
+        }
+      );
+
+      const trimmed = stdout.toString().trim();
+      if (trimmed) {
+        const parsed = JSON.parse(trimmed);
+        const rawList = Array.isArray(parsed) ? parsed : [parsed];
+        windowsUsbDevices = rawList
+          .filter((item) => item && typeof item === 'object')
+          .map((item) => {
+            const name = String(item.FriendlyName || 'USB Device');
+            const instanceId = String(item.InstanceId || '');
+            const status = String(item.Status || 'Unknown');
+            const cls = String(item.Class || '');
+            const errCode = Number(item.ConfigManagerErrorCode ?? 0);
+            const needsDriver =
+              errCode !== 0 || status.toLowerCase() !== 'ok';
+            const isMtpOnly =
+              !needsDriver &&
+              (/\b(mtp|wpd)\b/i.test(name) ||
+                /\b(wpd|portable)/i.test(cls) ||
+                (instanceId.toUpperCase().includes('VID_1F3A') &&
+                  !/adb|androidusbdeviceclass/i.test(`${name} ${cls}`)));
+
+            return {
+              name,
+              instanceId,
+              status,
+              needsDriver,
+              isMtpOnly,
+            };
+          });
+      } else {
+        windowsUsbDevices = [];
+      }
+    } catch {
+      windowsUsbDevices = [];
+    }
+  }
+
+  if (!adbAvailable) {
+    usbHint =
+      'ADB binary could not be executed. Check bundled resources/bin/win32/adb.exe or install Android SDK Platform-Tools.';
+  } else if (process.platform === 'win32' && connectedCount === 0) {
+    if (windowsUsbDevices?.some((d) => d.needsDriver)) {
+      usbHint =
+        'USB handheld detected in Windows Device Manager with a missing WinUSB ADB driver. Install the WinUSB driver for "ADB Interface" (VID_1F3A / VID_18D1) via Zadig or Windows Update, or connect wirelessly over Wi-Fi (SSH / P2P).';
+    } else if (windowsUsbDevices?.some((d) => d.isMtpOnly)) {
+      usbHint =
+        'Device is connected in MTP-only mode without an active ADB USB interface. In KV-Android Control Center (Trung tâm nhanh via MENU), toggle "Cổng USB" from "Chỉ sạc" to "MTP + ADB" (blue), or connect wirelessly over Wi-Fi.';
+    } else {
+      usbHint =
+        'No USB ADB device detected. On TrimUI Smart Pro S, plug a data-capable USB-C cable into the bottom USB-C port (labeled DC, next to the MicroSD slot — NOT the top HOST port) and toggle "Cổng USB" in KV-Android Control Center (Trung tâm nhanh) from "Chỉ sạc" to "MTP + ADB", or connect over Wi-Fi.';
+    }
+  } else if (connectedCount === 0) {
+    usbHint =
+      'No USB ADB device detected. On TrimUI Smart Pro S, plug a data-capable USB-C cable into the bottom USB-C port (labeled DC, next to the MicroSD slot — NOT the top HOST port) and toggle "Cổng USB" in KV-Android Control Center (Trung tâm nhanh) from "Chỉ sạc" to "MTP + ADB", or connect over Wi-Fi.';
+  }
+
+  return {
+    adbBinaryPath,
+    adbAvailable,
+    adbError: lastAdbError,
+    platform: process.platform,
+    usbHint,
+    windowsUsbDevices,
+  };
 }
 
 export async function connectWirelessDevice(

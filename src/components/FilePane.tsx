@@ -1,7 +1,9 @@
 import React, { useId, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowUp,
   ArrowUpDown,
+  CheckCircle2,
   CheckSquare,
   Download,
   File,
@@ -20,6 +22,7 @@ import {
   Loader2,
   PackagePlus,
   Pencil,
+  Radio,
   RefreshCw,
   Search,
   Share2,
@@ -27,6 +30,8 @@ import {
   Square,
   Trash2,
   Upload,
+  Usb,
+  Wifi,
 } from 'lucide-react';
 import {
   api,
@@ -38,6 +43,7 @@ import {
   joinPosixPath,
 } from '../api';
 import type {
+  AdbDiagnostics,
   AndroidDevice,
   DirectoryListingResponse,
   FileEntry,
@@ -73,6 +79,10 @@ interface FilePaneProps {
   onShareP2p?: (paths: string[]) => void;
   device?: AndroidDevice | null;
   extraVolumes?: StorageVolume[];
+  diagnostics?: AdbDiagnostics | null;
+  onAutoDiscover?: () => Promise<void> | void;
+  autoDiscovering?: boolean;
+  onOpenWifiModal?: () => void;
 }
 
 type SortKey = 'name' | 'size' | 'mtime';
@@ -194,6 +204,10 @@ export const FilePane: React.FC<FilePaneProps> = ({
   onShareP2p,
   device,
   extraVolumes,
+  diagnostics,
+  onAutoDiscover,
+  autoDiscovering,
+  onOpenWifiModal,
 }) => {
   const captionId = useId();
   const fileUploadRef = useRef<HTMLInputElement | null>(null);
@@ -206,6 +220,8 @@ export const FilePane: React.FC<FilePaneProps> = ({
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [dragMode, setDragMode] = useState<'none' | 'pane' | 'os'>('none');
   const [uploading, setUploading] = useState(false);
+  const [localScanning, setLocalScanning] = useState(false);
+  const isScanningWifi = Boolean(autoDiscovering || localScanning);
 
   // Modal state for New Folder or Rename
   const [promptState, setPromptState] = useState<{
@@ -724,14 +740,166 @@ export const FilePane: React.FC<FilePaneProps> = ({
 
       {/* File Table or Empty/Error State */}
       {kind === 'android' && !device ? (
-        <div className="pane-empty-state">
-          <Smartphone size={32} color="var(--text-muted)" />
-          <h4>No Android Device Connected</h4>
-          <p>
-            Connect your Android phone, tablet, or handheld via USB with USB
-            Debugging enabled, or click <strong>Connect Wi-Fi ADB</strong> in the
-            top bar.
-          </p>
+        <div className="pane-empty-state assistant-empty-state">
+          <div className="assistant-header">
+            <div className="assistant-title-row">
+              <Smartphone size={22} color="var(--accent-android)" />
+              <h4>No Android / Handheld Device Connected</h4>
+            </div>
+
+            {diagnostics && (
+              <span
+                className={`meta-badge ${
+                  diagnostics.adbAvailable ? 'online' : ''
+                }`}
+                style={
+                  !diagnostics.adbAvailable
+                    ? {
+                        color: 'var(--accent-danger)',
+                        borderColor: 'rgba(244, 63, 94, 0.35)',
+                        backgroundColor: 'var(--accent-danger-soft)',
+                      }
+                    : undefined
+                }
+                title={diagnostics.adbBinaryPath}
+              >
+                {diagnostics.adbAvailable ? (
+                  <CheckCircle2 size={11} />
+                ) : (
+                  <AlertTriangle size={11} />
+                )}
+                <span>
+                  {diagnostics.adbAvailable
+                    ? 'ADB Engine Ready'
+                    : 'ADB Binary Missing'}
+                </span>
+              </span>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="assistant-actions">
+            {onAutoDiscover && (
+              <button
+                type="button"
+                className="btn btn-android"
+                disabled={isScanningWifi}
+                onClick={async () => {
+                  setLocalScanning(true);
+                  try {
+                    await onAutoDiscover();
+                  } finally {
+                    setLocalScanning(false);
+                  }
+                }}
+              >
+                {isScanningWifi ? (
+                  <Loader2 size={13} className="spin" />
+                ) : (
+                  <Radio size={13} />
+                )}
+                <span>
+                  {isScanningWifi
+                    ? 'Scanning Wi-Fi LAN...'
+                    : 'Auto-Scan Wi-Fi Handheld'}
+                </span>
+              </button>
+            )}
+
+            {onOpenWifiModal && (
+              <button
+                type="button"
+                className="btn btn-bridge"
+                onClick={onOpenWifiModal}
+              >
+                <Wifi size={13} />
+                <span>Connect Wi-Fi / SSH</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="btn"
+              onClick={onRefresh}
+              disabled={loading}
+            >
+              <Usb size={13} />
+              <span>Rescan USB (adb devices)</span>
+            </button>
+          </div>
+
+          {/* Windows USB Device Manager Diagnostics Warning */}
+          {diagnostics?.windowsUsbDevices &&
+            diagnostics.windowsUsbDevices.length > 0 && (
+              <div className="assistant-usb-alert">
+                <div className="assistant-usb-alert-header">
+                  <AlertTriangle size={14} color="var(--accent-ubuntu)" />
+                  <span>
+                    Windows USB Device Detected — Action Required for USB ADB:
+                  </span>
+                </div>
+                <ul className="assistant-usb-list">
+                  {diagnostics.windowsUsbDevices.map((usb, idx) => (
+                    <li key={`${usb.instanceId}-${idx}`}>
+                      <strong>{usb.name}</strong>{' '}
+                      <code className="mono-num">({usb.status})</code> —{' '}
+                      {usb.needsDriver
+                        ? "Windows detected your USB handheld in Device Manager, but the WinUSB ADB driver is missing. Install WinUSB via Zadig for 'ADB Interface' or click Auto-Scan Wi-Fi above."
+                        : usb.isMtpOnly
+                        ? 'Connected in MTP-only mode — enable MTP + ADB on the handheld.'
+                        : 'USB device present; ensure MTP + ADB is enabled on the handheld.'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+          {/* 3-Step TrimUI Smart Pro S & Windows Connection Assistant */}
+          <div className="assistant-card">
+            <div className="assistant-card-title">
+              TrimUI Smart Pro S (KV-Android / KV-OS) &amp; Windows Connection
+              Checklist
+            </div>
+            <ol className="assistant-steps">
+              <li>
+                <strong>
+                  1. Enable <code className="mono-num">MTP + ADB</code> on
+                  Handheld:
+                </strong>{' '}
+                Press <code className="mono-num">MENU</code> to open{' '}
+                <strong>Trung tâm nhanh (Control Center)</strong> and tap{' '}
+                <strong>
+                  <code className="mono-num">Cổng USB</code>
+                </strong>{' '}
+                so it switches from{' '}
+                <code className="mono-num">Chỉ sạc (Charge only)</code> to{' '}
+                <strong>
+                  <code className="mono-num">MTP + ADB</code>
+                </strong>{' '}
+                (highlighted blue).
+              </li>
+              <li>
+                <strong>2. Use Bottom USB-C Port + Data Cable:</strong> Plug a{' '}
+                <strong>data-capable</strong> USB-C cable into the{' '}
+                <strong>
+                  BOTTOM USB-C port (<code className="mono-num">DC</code>)
+                </strong>{' '}
+                next to the MicroSD slot (never the top{' '}
+                <code className="mono-num">HOST</code> port, and avoid
+                charge-only cables).
+              </li>
+              <li>
+                <strong>
+                  3. Windows USB Driver / Zero-Driver Wi-Fi:
+                </strong>{' '}
+                If Windows Device Manager lacks the Allwinner (
+                <code className="mono-num">VID_1F3A</code>) ADB WinUSB driver,
+                use <strong>Auto-Scan Wi-Fi Handheld</strong> or{' '}
+                <strong>Connect Wi-Fi / SSH</strong> above to transfer files
+                over Wi-Fi without any Windows USB drivers.
+              </li>
+            </ol>
+          </div>
         </div>
       ) : error ? (
         <div className="pane-empty-state">

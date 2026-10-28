@@ -22,7 +22,7 @@ jobs:
             cmd: npx electron-builder --linux deb AppImage --publish never
           - os: windows-latest
             platform: windows
-            cmd: npx electron-builder --win nsis portable --publish never
+            cmd: npx electron-builder --win nsis portable zip --publish never
           - os: macos-latest
             platform: macos
             cmd: npx electron-builder --mac dmg zip --publish never
@@ -39,6 +39,22 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Ensure Windows ADB platform-tools are bundled
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $dest = "resources/bin/win32"
+          if (-not (Test-Path "$dest/adb.exe")) {
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            Invoke-WebRequest -Uri "https://dl.google.com/android/repository/platform-tools-latest-windows.zip" -OutFile "platform-tools-win.zip"
+            Expand-Archive -Path "platform-tools-win.zip" -DestinationPath "pt-temp" -Force
+            Copy-Item "pt-temp/platform-tools/adb.exe" $dest -Force
+            Copy-Item "pt-temp/platform-tools/AdbWinApi.dll" $dest -Force
+            Copy-Item "pt-temp/platform-tools/AdbWinUsbApi.dll" $dest -Force
+            Remove-Item "platform-tools-win.zip" -Force
+            Remove-Item "pt-temp" -Recurse -Force
+          }
 
       - name: Build frontend & backend
         run: npm run build

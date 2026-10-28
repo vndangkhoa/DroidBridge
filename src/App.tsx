@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { api } from './api';
 import type {
+  AdbDiagnostics,
   AndroidDevice,
   DirectoryListingResponse,
   TransferJob,
@@ -42,8 +43,12 @@ export const App: React.FC = () => {
     () => window.droidBridgeDesktop?.platform || 'linux'
   );
   const [devices, setDevices] = useState<AndroidDevice[]>([]);
+  const [adbDiagnostics, setAdbDiagnostics] = useState<AdbDiagnostics | null>(
+    null
+  );
   const [selectedSerial, setSelectedSerial] = useState<string>('');
   const [devicesLoading, setDevicesLoading] = useState<boolean>(false);
+  const [autoDiscovering, setAutoDiscovering] = useState<boolean>(false);
 
   const hostOsLabel =
     hostPlatform === 'win32'
@@ -133,8 +138,12 @@ export const App: React.FC = () => {
     async (preservePath = true) => {
       setDevicesLoading(true);
       try {
-        const list = await api.listDevices();
+        const { devices: list, diagnostics } =
+          await api.listDevicesWithDiagnostics();
         setDevices(list);
+        if (diagnostics) {
+          setAdbDiagnostics(diagnostics);
+        }
         if (list.length === 0) {
           setSelectedSerial('');
           setAndroidListing(null);
@@ -164,6 +173,39 @@ export const App: React.FC = () => {
     },
     [selectedSerial, androidListing?.currentPath, loadAndroidDirectory, showBanner]
   );
+
+  const handleAutoDiscover = useCallback(async () => {
+    setAutoDiscovering(true);
+    try {
+      const res = await api.autoDiscoverDevices();
+      if (res.connected.length > 0) {
+        showBanner(
+          'info',
+          `Auto-connected to Wi-Fi handheld: ${res.connected.join(', ')}`
+        );
+      } else if (res.devices.length > 0) {
+        showBanner('info', `Detected ${res.devices.length} connected device(s).`);
+      } else {
+        const sshPeers = res.peers.filter((p) => p.services.includes('ssh'));
+        if (sshPeers.length > 0) {
+          showBanner(
+            'info',
+            `Found SSH peer(s) on LAN (${sshPeers.map((p) => p.ip).join(', ')}). Click "Connect Wi-Fi / SSH" to sign in.`
+          );
+        } else {
+          showBanner(
+            'info',
+            'No Wi-Fi ADB handhelds (port 5555) responded on the local subnet. Ensure PC and handheld are on the same Wi-Fi, or check the USB checklist.'
+          );
+        }
+      }
+      await loadDevices(false);
+    } catch (err: any) {
+      showBanner('error', err?.message || 'Wi-Fi LAN auto-scan failed');
+    } finally {
+      setAutoDiscovering(false);
+    }
+  }, [loadDevices, showBanner]);
 
   const loadJobs = useCallback(async () => {
     try {
@@ -623,11 +665,12 @@ export const App: React.FC = () => {
             selectedDevice && loadAndroidDirectory(selectedDevice.serial, p)
           }
           onRefresh={() =>
-            selectedDevice &&
-            loadAndroidDirectory(
-              selectedDevice.serial,
-              androidListing?.currentPath
-            )
+            selectedDevice
+              ? loadAndroidDirectory(
+                  selectedDevice.serial,
+                  androidListing?.currentPath
+                )
+              : loadDevices(false)
           }
           onCreateFolder={async (folderPath) => {
             if (!selectedDevice) return;
@@ -701,6 +744,10 @@ export const App: React.FC = () => {
           }
           device={selectedDevice}
           extraVolumes={selectedDevice?.volumes}
+          diagnostics={adbDiagnostics}
+          onAutoDiscover={handleAutoDiscover}
+          autoDiscovering={autoDiscovering}
+          onOpenWifiModal={() => setWifiModalOpen(true)}
         />
       </main>
 

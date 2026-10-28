@@ -931,6 +931,97 @@ table.file-table tbody tr.is-selected th[scope='row'] {
   color: var(--text-muted);
 }
 
+.assistant-empty-state {
+  justify-content: flex-start;
+  align-items: stretch;
+  text-align: left;
+  padding: 16px 18px;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.assistant-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.assistant-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assistant-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.assistant-usb-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background-color: var(--accent-ubuntu-soft);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fde68a;
+  font-size: 12px;
+}
+
+.assistant-usb-alert-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--accent-ubuntu);
+}
+
+.assistant-usb-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.4;
+}
+
+.assistant-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background-color: var(--bg-toolbar);
+  border: 1px solid var(--border-subtle);
+}
+
+.assistant-card-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.assistant-steps {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.assistant-steps li strong {
+  color: var(--text-primary);
+}
+
 /* Bottom Transfer Queue & Activity Bar */
 .transfer-drawer {
   display: flex;

@@ -6,13 +6,14 @@ import {
   Loader2,
   PackagePlus,
   Pencil,
+  Radio,
   RefreshCw,
   Terminal,
   Wifi,
   X,
 } from 'lucide-react';
 import { api } from '../api';
-import type { AndroidDevice } from '../types';
+import type { AndroidDevice, P2pDiscoveredPeer } from '../types';
 
 interface LightDismissDialogProps {
   open: boolean;
@@ -112,8 +113,28 @@ export const WifiAdbModal: React.FC<WifiAdbModalProps> = ({
   const [sshPresets, setSshPresets] = useState<
     { alias: string; hostName?: string; user?: string; port?: string }[]
   >([]);
+  const [discoveredPeers, setDiscoveredPeers] = useState<P2pDiscoveredPeer[]>(
+    []
+  );
+  const [scanningLan, setScanningLan] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const scanLanPeers = async () => {
+    setScanningLan(true);
+    try {
+      const peers = await api.discoverP2pPeers();
+      setDiscoveredPeers(peers);
+      const firstAdb = peers.find((p) => p.services.includes('adb'));
+      if (firstAdb && protocol === 'adb') {
+        setAddress(`${firstAdb.ip}:${firstAdb.adbPort || 5555}`);
+      }
+    } catch {
+      // ignore scan error
+    } finally {
+      setScanningLan(false);
+    }
+  };
 
   useEffect(() => {
     if (open) {
@@ -121,6 +142,7 @@ export const WifiAdbModal: React.FC<WifiAdbModalProps> = ({
         .listSshPresets()
         .then(setSshPresets)
         .catch(() => {});
+      scanLanPeers();
     }
   }, [open]);
 
@@ -208,6 +230,66 @@ export const WifiAdbModal: React.FC<WifiAdbModalProps> = ({
               <code className="mono-num">~/.ssh/config</code> host alias).
             </p>
           )}
+
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 6,
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>
+                LAN Peers:
+              </span>
+              {discoveredPeers.length === 0 ? (
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {scanningLan ? 'Scanning local subnet...' : 'No active ADB/SSH peers found yet'}
+                </span>
+              ) : (
+                discoveredPeers.slice(0, 6).map((peer) => {
+                  const hasAdb = peer.services.includes('adb');
+                  const hasSsh = peer.services.includes('ssh');
+                  return (
+                    <button
+                      key={peer.ip}
+                      type="button"
+                      className={`btn btn-xs ${hasAdb ? 'btn-android' : hasSsh ? 'btn-bridge' : ''}`}
+                      onClick={() => {
+                        if (protocol === 'ssh') {
+                          setAddress(`root@${peer.ip}:${peer.sshPort || 22}`);
+                        } else {
+                          setAddress(`${peer.ip}:${peer.adbPort || 5555}`);
+                        }
+                      }}
+                      title={`Select ${peer.ip} (${peer.services.join(', ').toUpperCase()})`}
+                    >
+                      <Wifi size={11} />
+                      <span>
+                        {peer.hostname ? `${peer.hostname} (${peer.ip})` : peer.ip}
+                        {hasAdb ? ' • ADB' : hasSsh ? ' • SSH' : ''}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            <button
+              type="button"
+              className="btn btn-xs"
+              onClick={scanLanPeers}
+              disabled={scanningLan}
+            >
+              {scanningLan ? (
+                <Loader2 size={11} className="spin" />
+              ) : (
+                <Radio size={11} />
+              )}
+              <span>Scan LAN</span>
+            </button>
+          </div>
 
           {protocol === 'ssh' && sshPresets.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>

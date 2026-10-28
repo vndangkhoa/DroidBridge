@@ -13,6 +13,7 @@ import {
   connectWirelessDevice,
   deleteAndroid,
   disconnectDevice,
+  getAdbDiagnostics,
   installApkOnAndroid,
   listAndroidDirectory,
   listDevices,
@@ -30,7 +31,7 @@ import {
   renameLocal,
   resolveInputPath,
 } from './localFs';
-import { registerP2pRoutes, sanitizeRelativePath } from './p2p';
+import { discoverP2pPeers, registerP2pRoutes, sanitizeRelativePath } from './p2p';
 import {
   connectSshDevice,
   deleteSsh,
@@ -113,10 +114,51 @@ app.get('/api/devices', async (_req: Request, res: Response) => {
       listDevices(),
       listSshDevices(),
     ]);
-    res.json({ devices: [...adbDevices, ...sshDevices] });
+    const devices = [...adbDevices, ...sshDevices];
+    const diagnostics = await getAdbDiagnostics(devices.length);
+    res.json({ devices, diagnostics });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message, devices: [] });
+    const diagnostics = await getAdbDiagnostics(0).catch(() => undefined);
+    res.status(500).json({ error: message, devices: [], diagnostics });
+  }
+});
+
+app.post('/api/devices/auto-discover', async (_req: Request, res: Response) => {
+  try {
+    const peers = await discoverP2pPeers();
+    const adbPeers = peers.filter((p) => p.services.includes('adb'));
+    const connectedAddresses: string[] = [];
+
+    await Promise.all(
+      adbPeers.map(async (peer) => {
+        const addr = `${peer.ip}:${peer.adbPort || 5555}`;
+        const result = await connectWirelessDevice(addr);
+        if (result.ok) {
+          connectedAddresses.push(addr);
+        }
+      })
+    );
+
+    const [adbDevices, sshDevices] = await Promise.all([
+      listDevices(),
+      listSshDevices(),
+    ]);
+    res.json({
+      ok: true,
+      connected: connectedAddresses,
+      peers,
+      devices: [...adbDevices, ...sshDevices],
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({
+      ok: false,
+      error: message,
+      connected: [],
+      peers: [],
+      devices: [],
+    });
   }
 });
 

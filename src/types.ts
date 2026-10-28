@@ -112,3 +112,21 @@ export interface P2pNetworkStatus {
   };
 }
 
+export interface WindowsUsbDeviceDiagnostic {
+  name: string;
+  instanceId: string;
+  status: string;
+  needsDriver: boolean;
+  isMtpOnly: boolean;
+}
+
+export interface AdbDiagnostics {
+  adbBinaryPath: string;
+  adbAvailable: boolean;
+  adbError?: string;
+  platform: string;
+  usbHint?: string;
+  windowsUsbDevices?: WindowsUsbDeviceDiagnostic[];
+}
+
+
