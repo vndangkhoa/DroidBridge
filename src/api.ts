@@ -154,6 +154,11 @@ export const api = {
     });
   },
 
+  getLocalDownloadUrl(path: string): string {
+    const params = new URLSearchParams({ path });
+    return `/api/local/download?${params.toString()}`;
+  },
+
   async localCopy(
     sourcePaths: string[],
     targetDir: string

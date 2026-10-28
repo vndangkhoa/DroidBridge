@@ -240,6 +240,26 @@ app.get('/api/local/list', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/local/download', async (req: Request, res: Response) => {
+  try {
+    const rawPath = typeof req.query.path === 'string' ? req.query.path.trim() : '';
+    if (!rawPath) {
+      res.status(400).json({ error: 'path query parameter is required' });
+      return;
+    }
+    const resolvedPath = resolveInputPath(rawPath);
+    const stat = await fs.promises.stat(resolvedPath);
+    if (!stat.isFile()) {
+      res.status(400).json({ error: 'Target path is not a file' });
+      return;
+    }
+    res.download(resolvedPath, path.basename(resolvedPath));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
 app.post('/api/local/mkdir', async (req: Request, res: Response) => {
   try {
     const { path: targetPath } = req.body || {};

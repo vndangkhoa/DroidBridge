@@ -586,6 +586,8 @@ export const App: React.FC = () => {
               paths,
             })
           }
+          onTransferEntries={(paths) => handlePushToAndroid(paths)}
+          device={selectedDevice}
         />
 
         {/* Center Transfer Bridge Column */}
@@ -742,6 +744,7 @@ export const App: React.FC = () => {
               paths,
             })
           }
+          onTransferEntries={(paths) => handlePullToLocal(paths)}
           device={selectedDevice}
           extraVolumes={selectedDevice?.volumes}
           diagnostics={adbDiagnostics}

@@ -770,7 +770,14 @@ table.file-table tbody tr {
   transition: background-color 80ms ease;
 }
 
-table.file-table tbody tr:hover {
+table.file-table tbody tr.file-entry-row,
+table.file-table tbody tr.parent-dir-row {
+  cursor: pointer;
+  user-select: none;
+}
+
+table.file-table tbody tr:hover,
+table.file-table tbody tr.is-context-target {
   background-color: var(--bg-hover);
 }
 
@@ -801,7 +808,8 @@ table.file-table tbody th[scope='row'] {
   max-width: 280px;
 }
 
-table.file-table tbody tr:hover th[scope='row'] {
+table.file-table tbody tr:hover th[scope='row'],
+table.file-table tbody tr.is-context-target th[scope='row'] {
   background-color: var(--bg-hover);
 }
 
@@ -1446,4 +1454,165 @@ dialog::backdrop {
   background-color: var(--bg-canvas);
   border: 1px solid var(--border-subtle);
 }
+
+/* Context Menu Popover & Focusgroup (modern-web-guidance: menu) */
+.db-context-popover[popover] {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow:
+    0 16px 38px rgba(0, 0, 0, 0.58),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  min-inline-size: 236px;
+  max-inline-size: min(320px, calc(100vw - 16px));
+  z-index: 1000;
+  overflow: hidden;
+}
+
+[popover]:is(:popover-open, .\:popover-open) {
+  display: block;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .db-context-popover[popover]:is(:popover-open, .\:popover-open) {
+    opacity: 1;
+    translate: 0 0;
+    transition:
+      opacity 0.08s ease-out,
+      translate 0.08s ease-out;
+    @starting-style {
+      opacity: 0;
+      translate: 0 -0.15rem;
+    }
+  }
+}
+
+.db-context-menu-header {
+  padding: 6px 10px 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--bg-toolbar);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+}
+
+[focusgroup~='menu'] {
+  --menu-icon-size: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  gap: 1px;
+  outline: none;
+}
+
+/* Target items only. A closed submenu popover inside the focusgroup must keep display: none. */
+[focusgroup~='menu'] > button,
+[focusgroup~='menu'] > [role='group'] > button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+[focusgroup~='menu'] > button:hover:not(:disabled),
+[focusgroup~='menu'] > button:focus-visible:not(:disabled) {
+  background-color: var(--bg-hover);
+  color: #f8fafc;
+  outline: none;
+}
+
+[focusgroup~='menu'] > button:focus {
+  outline: none;
+}
+
+[focusgroup~='menu'] > button:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent-bridge);
+}
+
+[focusgroup~='menu'] > button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+[focusgroup~='menu'] > button.danger-item {
+  color: var(--accent-danger);
+}
+
+[focusgroup~='menu'] > button.danger-item:hover:not(:disabled),
+[focusgroup~='menu'] > button.danger-item:focus-visible:not(:disabled) {
+  background-color: var(--accent-danger-soft);
+  color: #fecdd3;
+}
+
+/* The leading slot holds the icon or check mark. */
+[focusgroup~='menu'] button::before {
+  content: '';
+  flex: none;
+  inline-size: var(--menu-icon-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-bridge);
+  font-weight: 700;
+}
+
+/* Check mark for checked items. This selector must be at least as specific as the base
+   ::before rule above, or the empty content wins and the check mark never shows. */
+[focusgroup~='menu'] button[aria-checked='true']::before {
+  content: '✓';
+}
+
+[focusgroup~='menu'] button:has(> .menu-item-icon)::before {
+  display: none;
+}
+
+[focusgroup~='menu'] .menu-item-icon {
+  flex: none;
+  inline-size: var(--menu-icon-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+[focusgroup~='menu'] > button.danger-item .menu-item-icon {
+  color: var(--accent-danger);
+}
+
+/* Shortcut or submenu indicator at the inline end. */
+[focusgroup~='menu'] .hint {
+  margin-inline-start: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  padding-inline-start: 10px;
+}
+
+[focusgroup~='menu'] > hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 4px 2px;
+  width: calc(100% - 4px);
+}
+
 

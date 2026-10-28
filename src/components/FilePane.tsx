@@ -1,11 +1,22 @@
-import React, { useId, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
   ArrowUp,
   ArrowUpDown,
   CheckCircle2,
   CheckSquare,
+  Copy,
   Download,
+  ExternalLink,
   File,
   FileArchive,
   FileAudio,
@@ -20,6 +31,7 @@ import {
   FolderUp,
   HardDrive,
   Loader2,
+  MoreVertical,
   PackagePlus,
   Pencil,
   Radio,
@@ -77,6 +89,7 @@ interface FilePaneProps {
   onDropOsPaths?: (paths: string[]) => Promise<void>;
   onDropFromOtherPane?: (sourcePaths: string[]) => void;
   onShareP2p?: (paths: string[]) => void;
+  onTransferEntries?: (paths: string[]) => Promise<void> | void;
   device?: AndroidDevice | null;
   extraVolumes?: StorageVolume[];
   diagnostics?: AdbDiagnostics | null;
@@ -202,6 +215,7 @@ export const FilePane: React.FC<FilePaneProps> = ({
   onDropOsPaths,
   onDropFromOtherPane,
   onShareP2p,
+  onTransferEntries,
   device,
   extraVolumes,
   diagnostics,
@@ -210,8 +224,14 @@ export const FilePane: React.FC<FilePaneProps> = ({
   onOpenWifiModal,
 }) => {
   const captionId = useId();
+  const contextMenuId = useId();
   const fileUploadRef = useRef<HTMLInputElement | null>(null);
   const folderUploadRef = useRef<HTMLInputElement | null>(null);
+  const tableWrapperRef = useRef<HTMLDivElement | null>(null);
+  const menuPopoverRef = useRef<HTMLDivElement | null>(null);
+  const focusGroupRef = useRef<HTMLDivElement | null>(null);
+  const lastTriggerRef = useRef<HTMLElement | null>(null);
+  const menuOpenedAtRef = useRef<number>(0);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [editingPath, setEditingPath] = useState(false);
@@ -222,6 +242,19 @@ export const FilePane: React.FC<FilePaneProps> = ({
   const [uploading, setUploading] = useState(false);
   const [localScanning, setLocalScanning] = useState(false);
   const isScanningWifi = Boolean(autoDiscovering || localScanning);
+
+  // Right-click / overflow context menu state (modern-web-guidance: menu)
+  const [contextMenu, setContextMenu] = useState<{
+    open: boolean;
+    x: number;
+    y: number;
+    entry: FileEntry | null;
+  }>({
+    open: false,
+    x: 0,
+    y: 0,
+    entry: null,
+  });
 
   // Modal state for New Folder or Rename
   const [promptState, setPromptState] = useState<{
@@ -350,6 +383,337 @@ export const FilePane: React.FC<FilePaneProps> = ({
       onNavigate(chosen);
     }
   };
+
+  const triggerFileDownload = useCallback(
+    (entry: FileEntry) => {
+      if (entry.isDirectory) return;
+      const url =
+        kind === 'ubuntu'
+          ? api.getLocalDownloadUrl(entry.path)
+          : device
+          ? api.getAndroidDownloadUrl(device.serial, entry.path)
+          : '';
+      if (!url) return;
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = entry.name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    },
+    [kind, device]
+  );
+
+  const handleActivateEntry = useCallback(
+    (entry: FileEntry) => {
+      if (entry.isDirectory) {
+        onNavigate(entry.path);
+        return;
+      }
+      if (kind === 'ubuntu' && window.droidBridgeDesktop?.openExternalPath) {
+        void window.droidBridgeDesktop.openExternalPath(entry.path);
+        return;
+      }
+      triggerFileDownload(entry);
+    },
+    [kind, onNavigate, triggerFileDownload]
+  );
+
+  const closeContextMenu = useCallback((fromPointer = true) => {
+    const popover = menuPopoverRef.current;
+    if (lastTriggerRef.current) {
+      try {
+        (lastTriggerRef.current as any).focus({
+          preventScroll: true,
+          focusVisible: !fromPointer,
+        });
+      } catch {
+        lastTriggerRef.current.focus({ preventScroll: true });
+      }
+    }
+    if (popover) {
+      if (typeof popover.hidePopover === 'function') {
+        try {
+          if (popover.matches(':popover-open')) {
+            popover.hidePopover();
+          }
+        } catch {
+          // ignore
+        }
+      }
+      popover.classList.remove(':popover-open');
+    }
+    setContextMenu((prev) => (prev.open ? { ...prev, open: false } : prev));
+  }, []);
+
+  const openContextMenuAt = useCallback(
+    (
+      clientX: number,
+      clientY: number,
+      entry: FileEntry | null,
+      triggerEl?: HTMLElement | null
+    ) => {
+      menuOpenedAtRef.current = performance.now();
+      // Only store triggerEl when opened from the explicit overflow (⋮) button.
+      // Storing document.activeElement here would capture .table-wrapper/body and prevent outside clicks from closing the menu!
+      lastTriggerRef.current = triggerEl ?? null;
+      window.dispatchEvent(
+        new CustomEvent('droidbridge:contextmenu-open', {
+          detail: contextMenuId,
+        })
+      );
+      setContextMenu({
+        open: true,
+        x: triggerEl ? clientX : clientX + 2,
+        y: triggerEl ? clientY : clientY + 2,
+        entry,
+      });
+    },
+    [contextMenuId]
+  );
+
+  // Progressive enhancement & fallbacks for Popover + focusgroup (modern-web-guidance: menu)
+  useEffect(() => {
+    if (
+      typeof HTMLElement !== 'undefined' &&
+      !('popover' in HTMLElement.prototype)
+    ) {
+      const polyfillUrl: string =
+        'https://unpkg.com/@oddbird/popover-polyfill@latest/dist/popover.min.js';
+      import(/* @vite-ignore */ polyfillUrl).catch(() => {});
+    }
+
+    const popover = menuPopoverRef.current;
+    const group = focusGroupRef.current;
+    if (!popover || !group) return;
+
+    let cleanupKeyDown: (() => void) | undefined;
+    if (!('focusGroup' in HTMLElement.prototype)) {
+      group.setAttribute('role', 'menu');
+      group.querySelectorAll('button:not([role])').forEach((item) => {
+        item.setAttribute('role', 'menuitem');
+      });
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          closeContextMenu(false);
+          return;
+        }
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+          return;
+        }
+        // Own items only: a nested submenu has its own focusgroup, a role="group" wrapper does not.
+        const items = Array.from(
+          group.querySelectorAll<HTMLButtonElement>('button')
+        )
+          .filter((item) => item.closest('[focusgroup]') === group)
+          .filter(
+            (item) =>
+              !item.disabled && item.getAttribute('aria-disabled') !== 'true'
+          );
+        if (items.length === 0) return;
+        const current = items.indexOf(
+          document.activeElement as HTMLButtonElement
+        );
+        const next =
+          event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+            ? items.length - 1
+            : current < 0
+            ? event.key === 'ArrowUp'
+              ? items.length - 1
+              : 0
+            : (current + (event.key === 'ArrowUp' ? -1 : 1) + items.length) %
+              items.length;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        items[next].focus({ preventScroll: true });
+      };
+      group.addEventListener('keydown', handleKeyDown, true);
+      cleanupKeyDown = () =>
+        group.removeEventListener('keydown', handleKeyDown, true);
+    }
+
+    return () => {
+      cleanupKeyDown?.();
+    };
+  }, [closeContextMenu]);
+
+  // Windows Explorer-style light-dismiss: any left/middle click outside closes immediately; right-clicking another row moves the menu
+  useEffect(() => {
+    if (!contextMenu.open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const popover = menuPopoverRef.current;
+      const target = event.target as Node | null;
+      if (popover && target && popover.contains(target)) {
+        return;
+      }
+      if (
+        lastTriggerRef.current &&
+        target &&
+        lastTriggerRef.current.contains(target)
+      ) {
+        return;
+      }
+      // If right-clicking inside our own file table wrapper, let onContextMenu reposition the menu directly
+      if (
+        event.button === 2 &&
+        tableWrapperRef.current &&
+        target &&
+        tableWrapperRef.current.contains(target)
+      ) {
+        return;
+      }
+      closeContextMenu(true);
+    };
+
+    const handleGlobalContextMenu = (event: MouseEvent) => {
+      const popover = menuPopoverRef.current;
+      const target = event.target as Node | null;
+      if (popover && target && popover.contains(target)) {
+        return;
+      }
+      if (
+        tableWrapperRef.current &&
+        target &&
+        tableWrapperRef.current.contains(target)
+      ) {
+        return;
+      }
+      closeContextMenu(true);
+    };
+
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        closeContextMenu(false);
+      } else if (event.key === 'Tab') {
+        closeContextMenu(false);
+      }
+    };
+
+    const handleOtherMenuOpen = (event: Event) => {
+      const customEvent = event as CustomEvent<string>;
+      if (customEvent.detail !== contextMenuId) {
+        closeContextMenu(true);
+      }
+    };
+
+    const handleDismissOnScrollOrBlur = () => {
+      closeContextMenu(true);
+    };
+
+    const wrapper = tableWrapperRef.current;
+    window.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('contextmenu', handleGlobalContextMenu, true);
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    window.addEventListener('resize', handleDismissOnScrollOrBlur);
+    window.addEventListener('blur', handleDismissOnScrollOrBlur);
+    window.addEventListener(
+      'droidbridge:contextmenu-open',
+      handleOtherMenuOpen as EventListener
+    );
+    wrapper?.addEventListener('scroll', handleDismissOnScrollOrBlur, {
+      passive: true,
+    });
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('contextmenu', handleGlobalContextMenu, true);
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
+      window.removeEventListener('resize', handleDismissOnScrollOrBlur);
+      window.removeEventListener('blur', handleDismissOnScrollOrBlur);
+      window.removeEventListener(
+        'droidbridge:contextmenu-open',
+        handleOtherMenuOpen as EventListener
+      );
+      wrapper?.removeEventListener('scroll', handleDismissOnScrollOrBlur);
+    };
+  }, [contextMenu.open, closeContextMenu, contextMenuId]);
+
+  // Open/close popover, sync fallback roles, and clamp coordinates to viewport
+  useEffect(() => {
+    const popover = menuPopoverRef.current;
+    const group = focusGroupRef.current;
+    if (!popover || !group) return;
+
+    if (!('focusGroup' in HTMLElement.prototype)) {
+      group.setAttribute('role', 'menu');
+      group.querySelectorAll('button:not([role])').forEach((item) => {
+        item.setAttribute('role', 'menuitem');
+      });
+    }
+
+    if (!contextMenu.open) {
+      if (typeof popover.hidePopover === 'function') {
+        try {
+          if (popover.matches(':popover-open')) {
+            popover.hidePopover();
+          }
+        } catch {
+          // ignore
+        }
+      }
+      popover.classList.remove(':popover-open');
+      return;
+    }
+
+    if (typeof popover.showPopover === 'function') {
+      try {
+        if (!popover.matches(':popover-open')) {
+          popover.showPopover();
+        }
+      } catch {
+        popover.classList.add(':popover-open');
+      }
+    } else {
+      popover.classList.add(':popover-open');
+    }
+
+    popover.style.left = `${contextMenu.x}px`;
+    popover.style.top = `${contextMenu.y}px`;
+
+    const rect = popover.getBoundingClientRect();
+    const pad = 8;
+    const maxLeft = Math.max(pad, window.innerWidth - rect.width - pad);
+    const maxTop = Math.max(pad, window.innerHeight - rect.height - pad);
+    const clampedLeft = Math.min(Math.max(pad, contextMenu.x), maxLeft);
+    const clampedTop = Math.min(Math.max(pad, contextMenu.y), maxTop);
+
+    popover.style.left = `${clampedLeft}px`;
+    popover.style.top = `${clampedTop}px`;
+
+    // Focus the menu container itself (like Windows Explorer) so no item is pre-highlighted until hovered or arrow-keyed
+    group.focus({ preventScroll: true });
+  }, [contextMenu]);
+
+  const contextEntry = contextMenu.entry;
+  const contextTargetPaths = useMemo(() => {
+    if (contextEntry) {
+      if (selectedPaths.has(contextEntry.path) && selectedPaths.size > 0) {
+        return Array.from(selectedPaths);
+      }
+      return [contextEntry.path];
+    }
+    if (selectedPaths.size > 0) {
+      return Array.from(selectedPaths);
+    }
+    return [currentPath];
+  }, [contextEntry, selectedPaths, currentPath]);
+
+  const contextDeletePaths = useMemo(() => {
+    if (contextEntry) {
+      if (selectedPaths.has(contextEntry.path) && selectedPaths.size > 1) {
+        return Array.from(selectedPaths);
+      }
+      return [contextEntry.path];
+    }
+    return Array.from(selectedPaths);
+  }, [contextEntry, selectedPaths]);
 
   const handleFileUploadChange = async (
     e: React.ChangeEvent<HTMLInputElement>
@@ -914,10 +1278,17 @@ export const FilePane: React.FC<FilePaneProps> = ({
         </div>
       ) : (
         <div
+          ref={tableWrapperRef}
           tabIndex={0}
           role="region"
           aria-labelledby={captionId}
           className="table-wrapper"
+          onContextMenu={(e) => {
+            if ((e.target as HTMLElement).closest('tr.file-entry-row')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            openContextMenuAt(e.clientX, e.clientY, null);
+          }}
         >
           <table className="file-table">
             <caption id={captionId} className="sr-only-caption">
@@ -979,10 +1350,73 @@ export const FilePane: React.FC<FilePaneProps> = ({
                   </span>
                 </th>
                 <th style={{ width: 96 }}>Mode</th>
-                <th style={{ width: 130, textAlign: 'right' }}>Actions</th>
+                <th style={{ width: 146, textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
+              {listing?.parentPath && (
+                <tr
+                  className="parent-dir-row"
+                  onDoubleClick={() =>
+                    listing.parentPath && onNavigate(listing.parentPath)
+                  }
+                  title={`Double-click to go up to parent directory (${listing.parentPath})`}
+                >
+                  <td>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        color: 'var(--text-muted)',
+                      }}
+                    >
+                      <ArrowUp size={13} />
+                    </span>
+                  </td>
+                  <th scope="row">
+                    <div className="entry-name-cell is-dir">
+                      <FolderOpen
+                        size={15}
+                        color={
+                          kind === 'ubuntu'
+                            ? 'var(--accent-ubuntu)'
+                            : 'var(--accent-android)'
+                        }
+                        style={{ flexShrink: 0 }}
+                      />
+                      <span className="entry-name-text">..</span>
+                    </div>
+                  </th>
+                  <td
+                    className="mono-num"
+                    style={{
+                      textAlign: 'right',
+                      color: 'var(--text-muted)',
+                      fontSize: 11,
+                    }}
+                  >
+                    PARENT
+                  </td>
+                  <td
+                    className="mono-num"
+                    style={{
+                      color: 'var(--text-muted)',
+                      fontSize: 11.5,
+                    }}
+                  >
+                    —
+                  </td>
+                  <td
+                    className="mono-num"
+                    style={{
+                      color: 'var(--text-muted)',
+                      fontSize: 11,
+                    }}
+                  >
+                    —
+                  </td>
+                  <td style={{ textAlign: 'right' }} />
+                </tr>
+              )}
               {filteredAndSortedEntries.length === 0 ? (
                 <tr>
                   <td
@@ -1003,6 +1437,8 @@ export const FilePane: React.FC<FilePaneProps> = ({
               ) : (
                 filteredAndSortedEntries.map((entry) => {
                   const isSelected = selectedPaths.has(entry.path);
+                  const isContextTarget =
+                    contextMenu.open && contextMenu.entry?.path === entry.path;
                   const isApk =
                     !entry.isDirectory &&
                     entry.name.toLowerCase().endsWith('.apk');
@@ -1010,8 +1446,23 @@ export const FilePane: React.FC<FilePaneProps> = ({
                   return (
                     <tr
                       key={entry.path}
-                      className={isSelected ? 'is-selected' : undefined}
+                      className={`file-entry-row${
+                        isSelected ? ' is-selected' : ''
+                      }${isContextTarget ? ' is-context-target' : ''}`}
                       draggable
+                      onDoubleClick={(e) => {
+                        if (
+                          (e.target as HTMLElement).closest('button, a, input')
+                        ) {
+                          return;
+                        }
+                        handleActivateEntry(entry);
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openContextMenuAt(e.clientX, e.clientY, entry);
+                      }}
                       onDragStart={(e) => {
                         const pathsToDrag = isSelected
                           ? Array.from(selectedPaths)
@@ -1029,7 +1480,13 @@ export const FilePane: React.FC<FilePaneProps> = ({
                       <td>
                         <button
                           type="button"
-                          onClick={() => toggleSelectEntry(entry.path)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSelectEntry(entry.path);
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                          }}
                           style={{
                             background: 'transparent',
                             border: 'none',
@@ -1037,10 +1494,12 @@ export const FilePane: React.FC<FilePaneProps> = ({
                               ? 'var(--accent-bridge)'
                               : 'var(--text-muted)',
                             cursor: 'pointer',
-                            padding: 0,
+                            padding: 4,
+                            margin: -4,
                             display: 'flex',
                           }}
                           aria-label={`Select ${entry.name}`}
+                          aria-pressed={isSelected}
                         >
                           {isSelected ? (
                             <CheckSquare size={14} />
@@ -1055,16 +1514,10 @@ export const FilePane: React.FC<FilePaneProps> = ({
                           className={`entry-name-cell${
                             entry.isDirectory ? ' is-dir' : ''
                           }`}
-                          onClick={() => toggleSelectEntry(entry.path)}
-                          onDoubleClick={() => {
-                            if (entry.isDirectory) {
-                              onNavigate(entry.path);
-                            }
-                          }}
                           title={
                             entry.isDirectory
-                              ? `Double-click to open ${entry.name}`
-                              : entry.path
+                              ? `Double-click row to open ${entry.name} • Right-click for actions`
+                              : `${entry.path} • Double-click to open/download • Right-click for actions`
                           }
                         >
                           {getEntryIcon(entry, kind)}
@@ -1173,6 +1626,32 @@ export const FilePane: React.FC<FilePaneProps> = ({
                           >
                             <Trash2 size={12} />
                           </button>
+
+                          <button
+                            type="button"
+                            className="btn btn-icon-only btn-xs"
+                            aria-haspopup="menu"
+                            aria-expanded={isContextTarget}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (isContextTarget) {
+                                closeContextMenu(true);
+                                return;
+                              }
+                              const rect =
+                                e.currentTarget.getBoundingClientRect();
+                              openContextMenuAt(
+                                rect.right,
+                                rect.bottom + 4,
+                                entry,
+                                e.currentTarget
+                              );
+                            }}
+                            title={`Context menu for ${entry.name} (or right-click row)`}
+                            aria-label={`More actions for ${entry.name}`}
+                          >
+                            <MoreVertical size={12} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1183,6 +1662,336 @@ export const FilePane: React.FC<FilePaneProps> = ({
           </table>
         </div>
       )}
+
+      {/* Right-Click / Overflow Context Menu (modern-web-guidance: menu) */}
+      <div
+        ref={menuPopoverRef}
+        id={contextMenuId}
+        className="db-context-popover"
+        {...({ popover: 'manual' } as any)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+      >
+        <div className="db-context-menu-header">
+          {contextEntry ? contextEntry.name : currentPath}
+        </div>
+        {/* Nested inside popover: Chromium otherwise drops focusgroup keyboard behavior */}
+        <div
+          ref={focusGroupRef}
+          tabIndex={-1}
+          className="db-context-menu"
+          {...({ focusgroup: 'menu nomemory' } as any)}
+          aria-label={`${title} context menu`}
+          onPointerLeave={() => {
+            if (
+              focusGroupRef.current &&
+              focusGroupRef.current.contains(document.activeElement) &&
+              document.activeElement !== focusGroupRef.current
+            ) {
+              focusGroupRef.current.focus({ preventScroll: true });
+            }
+          }}
+        >
+          {contextEntry?.isDirectory && (
+            <button
+              type="button"
+              onClick={(e) => {
+                closeContextMenu(e.detail > 0);
+                onNavigate(contextEntry.path);
+              }}
+            >
+              <span className="menu-item-icon" aria-hidden="true">
+                <FolderOpen size={14} />
+              </span>
+              <span>Open Folder</span>
+              <span className="hint" aria-hidden="true">
+                Double-click
+              </span>
+            </button>
+          )}
+
+          {contextEntry &&
+            !contextEntry.isDirectory &&
+            kind === 'ubuntu' &&
+            Boolean(window.droidBridgeDesktop?.openExternalPath) && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  closeContextMenu(e.detail > 0);
+                  void window.droidBridgeDesktop?.openExternalPath?.(
+                    contextEntry.path
+                  );
+                }}
+              >
+                <span className="menu-item-icon" aria-hidden="true">
+                  <ExternalLink size={14} />
+                </span>
+                <span>Open File</span>
+                <span className="hint" aria-hidden="true">
+                  Double-click
+                </span>
+              </button>
+            )}
+
+          {contextEntry && !contextEntry.isDirectory && (
+            <button
+              type="button"
+              disabled={kind === 'android' && !device}
+              onClick={(e) => {
+                closeContextMenu(e.detail > 0);
+                triggerFileDownload(contextEntry);
+              }}
+            >
+              <span className="menu-item-icon" aria-hidden="true">
+                <Download size={14} />
+              </span>
+              <span>Download File</span>
+            </button>
+          )}
+
+          {onTransferEntries && (
+            <button
+              type="button"
+              disabled={
+                !device ||
+                device.state !== 'device' ||
+                (!contextEntry && selectedPaths.size === 0)
+              }
+              onClick={(e) => {
+                const paths = contextEntry
+                  ? contextTargetPaths
+                  : Array.from(selectedPaths);
+                closeContextMenu(e.detail > 0);
+                if (paths.length > 0) {
+                  void onTransferEntries(paths);
+                }
+              }}
+            >
+              <span className="menu-item-icon" aria-hidden="true">
+                {kind === 'ubuntu' ? (
+                  <ArrowRight size={14} />
+                ) : (
+                  <ArrowLeft size={14} />
+                )}
+              </span>
+              <span>
+                {kind === 'ubuntu'
+                  ? `Push to ${
+                      device?.osType === 'linux' ? 'Linux' : 'Device'
+                    }${
+                      contextTargetPaths.length > 1
+                        ? ` (${contextTargetPaths.length})`
+                        : ''
+                    }`
+                  : `Pull to Host${
+                      contextTargetPaths.length > 1
+                        ? ` (${contextTargetPaths.length})`
+                        : ''
+                    }`}
+              </span>
+              <span className="hint" aria-hidden="true">
+                {kind === 'ubuntu' ? '→' : '←'}
+              </span>
+            </button>
+          )}
+
+          {kind === 'ubuntu' &&
+            contextEntry &&
+            !contextEntry.isDirectory &&
+            contextEntry.name.toLowerCase().endsWith('.apk') &&
+            onInstallApk && (
+              <button
+                type="button"
+                disabled={
+                  !device ||
+                  device.state !== 'device' ||
+                  device.osType === 'linux'
+                }
+                onClick={(e) => {
+                  closeContextMenu(e.detail > 0);
+                  onInstallApk(contextEntry.path);
+                }}
+              >
+                <span className="menu-item-icon" aria-hidden="true">
+                  <PackagePlus size={14} />
+                </span>
+                <span>Install APK on Device</span>
+              </button>
+            )}
+
+          {onShareP2p && (
+            <button
+              type="button"
+              disabled={kind === 'android' && !device}
+              onClick={(e) => {
+                closeContextMenu(e.detail > 0);
+                onShareP2p(contextTargetPaths);
+              }}
+            >
+              <span className="menu-item-icon" aria-hidden="true">
+                <Share2 size={14} />
+              </span>
+              <span>
+                Share over Wi-Fi P2P
+                {contextTargetPaths.length > 1
+                  ? ` (${contextTargetPaths.length})`
+                  : ''}
+              </span>
+              <span className="hint" aria-hidden="true">
+                QR / Link
+              </span>
+            </button>
+          )}
+
+          <hr />
+
+          {contextEntry && (
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={selectedPaths.has(contextEntry.path)}
+              onClick={(e) => {
+                toggleSelectEntry(contextEntry.path);
+                closeContextMenu(e.detail > 0);
+              }}
+            >
+              <span>Select &ldquo;{contextEntry.name}&rdquo;</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={allVisibleSelected}
+            disabled={filteredAndSortedEntries.length === 0}
+            onClick={(e) => {
+              toggleSelectAll();
+              closeContextMenu(e.detail > 0);
+            }}
+          >
+            <span>
+              {allVisibleSelected
+                ? 'Deselect All Visible'
+                : `Select All (${filteredAndSortedEntries.length})`}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              const pathToCopy = contextEntry ? contextEntry.path : currentPath;
+              void navigator.clipboard?.writeText(pathToCopy);
+              closeContextMenu(e.detail > 0);
+            }}
+          >
+            <span className="menu-item-icon" aria-hidden="true">
+              <Copy size={14} />
+            </span>
+            <span>Copy Path</span>
+          </button>
+
+          {kind === 'ubuntu' &&
+            Boolean(window.droidBridgeDesktop?.openExternalPath) && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  const folderToOpen = contextEntry?.isDirectory
+                    ? contextEntry.path
+                    : currentPath;
+                  closeContextMenu(e.detail > 0);
+                  void window.droidBridgeDesktop?.openExternalPath?.(
+                    folderToOpen
+                  );
+                }}
+              >
+                <span className="menu-item-icon" aria-hidden="true">
+                  <FolderOpen size={14} />
+                </span>
+                <span>Open in System File Manager</span>
+              </button>
+            )}
+
+          <hr />
+
+          <button
+            type="button"
+            disabled={kind === 'android' && !device}
+            onClick={(e) => {
+              closeContextMenu(e.detail > 0);
+              setPromptState({
+                open: true,
+                mode: 'mkdir',
+                initialValue: '',
+              });
+            }}
+          >
+            <span className="menu-item-icon" aria-hidden="true">
+              <FolderPlus size={14} />
+            </span>
+            <span>New Folder…</span>
+          </button>
+
+          {contextEntry && (
+            <button
+              type="button"
+              onClick={(e) => {
+                closeContextMenu(e.detail > 0);
+                setPromptState({
+                  open: true,
+                  mode: 'rename',
+                  initialValue: contextEntry.name,
+                  targetEntry: contextEntry,
+                });
+              }}
+            >
+              <span className="menu-item-icon" aria-hidden="true">
+                <Pencil size={14} />
+              </span>
+              <span>Rename…</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={(e) => {
+              closeContextMenu(e.detail > 0);
+              onRefresh();
+            }}
+          >
+            <span className="menu-item-icon" aria-hidden="true">
+              <RefreshCw size={14} />
+            </span>
+            <span>Refresh Directory</span>
+          </button>
+
+          {contextDeletePaths.length > 0 && (
+            <>
+              <hr />
+              <button
+                type="button"
+                className="danger-item"
+                onClick={(e) => {
+                  const toDelete = [...contextDeletePaths];
+                  closeContextMenu(e.detail > 0);
+                  void onDeleteEntries(toDelete);
+                }}
+              >
+                <span className="menu-item-icon" aria-hidden="true">
+                  <Trash2 size={14} />
+                </span>
+                <span>
+                  {contextDeletePaths.length === 1 && contextEntry
+                    ? `Delete "${contextEntry.name}"`
+                    : `Delete Selected (${contextDeletePaths.length})`}
+                </span>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Pane Footer */}
       <footer className="pane-footer">
